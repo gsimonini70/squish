@@ -1,0 +1,93 @@
+# ============================================
+# Squish - PDF Compression Engine
+# Configuration File
+# ============================================
+# Copy this file and customize for your environment
+# Activate with: --spring.profiles.active=<profile>
+
+compressor:
+  # ----------------------------------------
+  # Compression Mode
+  # ----------------------------------------
+  # LOSSLESS - No quality loss (PDF optimization only)
+  # MEDIUM   - Balanced compression (85% scale, 80% JPEG quality)
+  # AGGRESSIVE - Maximum compression (70% scale, 60% JPEG quality)
+  mode: AGGRESSIVE
+  
+  # ----------------------------------------
+  # Dry-Run Mode
+  # ----------------------------------------
+  # When true, processes PDFs but doesn't write to database
+  dry-run: false
+
+  # ----------------------------------------
+  # Database Configuration
+  # ----------------------------------------
+  database:
+    jdbc-url: jdbc:oracle:thin:@//localhost:1521/ORCLPDB1
+    username: ${DB_USER:user}
+    password: ${DB_PASSWORD:password}
+    max-pool-size: 12
+
+  # ----------------------------------------
+  # Pipeline Configuration
+  # ----------------------------------------
+  pipeline:
+    # Number of compression worker threads
+    worker-threads: 8
+    
+    # Record ID range (0 = no limit)
+    id-from: 0
+    id-to: 0
+    
+    # Database fetch/write batch sizes
+    fetch-size: 200
+    batch-size: 200
+    
+    # Internal queue capacity
+    queue-capacity: 500
+    
+    # Throttle between records (ms), 0 = no throttle
+    throttle-millis: 0
+
+  # ----------------------------------------
+  # HTTP Dashboard
+  # ----------------------------------------
+  http:
+    port: 8080
+
+  # ----------------------------------------
+  # Watchdog Mode
+  # ----------------------------------------
+  # Continuous monitoring for new records
+  watchdog:
+    enabled: false
+    poll-interval-seconds: 60
+
+  # ----------------------------------------
+  # Email Notifications
+  # ----------------------------------------
+  email:
+    enabled: false
+    smtp-host: smtp.example.com
+    smtp-port: 587
+    ssl: true
+    smtp-user: ${SMTP_USER:}
+    smtp-password: ${SMTP_PASSWORD:}
+    from: squish@company.com
+    to:
+      - admin@company.com
+
+# ----------------------------------------
+# Logging Configuration
+# ----------------------------------------
+logging:
+  level:
+    root: INFO
+    com.lucsartech.pdf: INFO
+  file:
+    name: logs/squish.log
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 7

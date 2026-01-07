@@ -1,0 +1,41 @@
+# ============================================
+# Squish - Docker Compose
+# ============================================
+# Usage: docker-compose up -d
+
+version: '3.8'
+
+services:
+  squish:
+    build: .
+    image: squish:2.0
+    container_name: squish
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx2g -XX:+UseZGC
+      - SPRING_PROFILES_ACTIVE=prod
+      - DB_URL=${DB_URL:-jdbc:oracle:thin:@//dbserver:1521/SERVICE}
+      - DB_USER=${DB_USER:-user}
+      - DB_PASSWORD=${DB_PASSWORD:-password}
+    volumes:
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 512M

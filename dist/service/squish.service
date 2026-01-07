@@ -1,0 +1,48 @@
+# ============================================
+# Squish - Systemd Service File
+# ============================================
+# Installation:
+#   1. Copy to /etc/systemd/system/squish.service
+#   2. sudo systemctl daemon-reload
+#   3. sudo systemctl enable squish
+#   4. sudo systemctl start squish
+
+[Unit]
+Description=Squish PDF Compression Engine
+Documentation=https://github.com/gsimonini70/squish
+After=network.target oracle.service
+
+[Service]
+Type=simple
+User=squish
+Group=squish
+WorkingDirectory=/opt/squish
+
+# Java configuration
+Environment="JAVA_HOME=/usr/lib/jvm/java-22"
+Environment="JAVA_OPTS=-Xms512m -Xmx4g -XX:+UseZGC"
+Environment="SPRING_PROFILES_ACTIVE=prod"
+
+# Database credentials (use environment file for security)
+EnvironmentFile=-/opt/squish/config/squish.env
+
+ExecStart=/usr/bin/java $JAVA_OPTS -jar /opt/squish/squish.jar --spring.profiles.active=$SPRING_PROFILES_ACTIVE
+ExecStop=/bin/kill -TERM $MAINPID
+
+# Restart configuration
+Restart=on-failure
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/squish/logs
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=squish
+
+[Install]
+WantedBy=multi-user.target
