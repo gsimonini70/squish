@@ -28,7 +28,7 @@ public class BeanConfiguration {
 
     @Bean
     public MonitorServer monitorServer(ProgressTracker tracker, PdfCompressorProperties properties) {
-        return new MonitorServer(tracker, properties.isDryRun(), properties.getWatchdog().isEnabled());
+        return new MonitorServer(tracker, properties.isDryRun(), properties.getWatchdog().isEnabled(), properties.getMode());
     }
 
     @Bean

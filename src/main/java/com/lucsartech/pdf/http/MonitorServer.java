@@ -2,6 +2,7 @@ package com.lucsartech.pdf.http;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.lucsartech.pdf.config.CompressionMode;
 import com.lucsartech.pdf.pipeline.ProgressTracker;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -25,16 +26,18 @@ public final class MonitorServer implements AutoCloseable {
     private final ProgressTracker tracker;
     private final boolean dryRun;
     private final boolean watchMode;
+    private final CompressionMode compressionMode;
     private HttpServer server;
 
-    public MonitorServer(ProgressTracker tracker, boolean dryRun) {
-        this(tracker, dryRun, false);
+    public MonitorServer(ProgressTracker tracker, boolean dryRun, CompressionMode compressionMode) {
+        this(tracker, dryRun, false, compressionMode);
     }
 
-    public MonitorServer(ProgressTracker tracker, boolean dryRun, boolean watchMode) {
+    public MonitorServer(ProgressTracker tracker, boolean dryRun, boolean watchMode, CompressionMode compressionMode) {
         this.tracker = tracker;
         this.dryRun = dryRun;
         this.watchMode = watchMode;
+        this.compressionMode = compressionMode;
     }
 
     public void start(int port) throws IOException {
@@ -56,7 +59,7 @@ public final class MonitorServer implements AutoCloseable {
         }
         var system = getSystemInfo();
         var activity = tracker.recentActivity();
-        var response = new StatusResponse(snapshot, modeStr, watchMode, system, activity);
+        var response = new StatusResponse(snapshot, modeStr, compressionMode.name(), watchMode, system, activity);
 
         sendJson(exchange, response);
     }
@@ -121,7 +124,8 @@ public final class MonitorServer implements AutoCloseable {
         }
     }
 
-    private record StatusResponse(ProgressTracker.Snapshot data, String mode, boolean watchMode, SystemInfo system,
+    private record StatusResponse(ProgressTracker.Snapshot data, String mode, String compressionMode,
+                                     boolean watchMode, SystemInfo system,
                                      java.util.List<ProgressTracker.ActivityEntry> activity) {}
     private record HealthResponse(String status, String phase) {}
     private record SystemInfo(long memUsed, long memTotal, long memMax, long memFree, double memPercent,
@@ -244,6 +248,27 @@ public final class MonitorServer implements AutoCloseable {
                         background: rgba(139, 92, 246, 0.2);
                         color: var(--accent-purple);
                         border: 1px solid rgba(139, 92, 246, 0.3);
+                    }
+
+                    .badge-compression {
+                        background: rgba(236, 72, 153, 0.2);
+                        color: #ec4899;
+                        border: 1px solid rgba(236, 72, 153, 0.3);
+                    }
+                    .badge-compression.lossless {
+                        background: rgba(34, 197, 94, 0.2);
+                        color: var(--accent-green);
+                        border: 1px solid rgba(34, 197, 94, 0.3);
+                    }
+                    .badge-compression.medium {
+                        background: rgba(245, 158, 11, 0.2);
+                        color: var(--accent-orange);
+                        border: 1px solid rgba(245, 158, 11, 0.3);
+                    }
+                    .badge-compression.aggressive {
+                        background: rgba(239, 68, 68, 0.2);
+                        color: var(--accent-red);
+                        border: 1px solid rgba(239, 68, 68, 0.3);
                     }
 
                     .elapsed {
@@ -555,6 +580,7 @@ public final class MonitorServer implements AutoCloseable {
                         <h1>🗜️ Squish</h1>
                         <div class="badges">
                             <span id="modeBadge" class="badge badge-mode">MODE: NORMAL</span>
+                            <span id="compressionBadge" class="badge badge-compression">AGGRESSIVE</span>
                             <span id="statusBadge" class="badge badge-status">RUNNING</span>
                             <span id="elapsed" class="elapsed">00:00</span>
                         </div>
@@ -738,6 +764,11 @@ public final class MonitorServer implements AutoCloseable {
                             const modeBadge = document.getElementById('modeBadge');
                             modeBadge.textContent = 'MODE: ' + json.mode;
                             modeBadge.classList.toggle('dry-run', json.mode.includes('DRY'));
+
+                            // Compression mode badge
+                            const compBadge = document.getElementById('compressionBadge');
+                            compBadge.textContent = json.compressionMode;
+                            compBadge.className = 'badge badge-compression ' + json.compressionMode.toLowerCase();
 
                             // Status badge
                             const statusBadge = document.getElementById('statusBadge');
