@@ -1,0 +1,258 @@
+# 🗜️ Squish - PDF Compression Engine
+
+[![Java](https://img.shields.io/badge/Java-22+-orange.svg)](https://openjdk.org/projects/jdk/22/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![License](https://img.shields.io/badge/License-Proprietary-blue.svg)]()
+
+**Squish** is a high-performance PDF compression pipeline designed for enterprise workloads. Built with Java 22 Virtual Threads and Spring Boot 3.2, it efficiently processes large volumes of PDFs stored in Oracle Database.
+
+> **Designed & Engineered by [Lucsartech Srl](https://lucsartech.com)**
+
+---
+
+## ✨ Features
+
+- **High Performance** - Virtual Threads (Project Loom) for massive I/O concurrency
+- **Configurable Compression** - Three modes: LOSSLESS, MEDIUM, AGGRESSIVE
+- **Real-time Dashboard** - Beautiful glassmorphism UI with live metrics
+- **System Monitoring** - CPU, Memory, Thread usage gauges
+- **Activity Tracking** - Real-time log of processed PDFs with filenames
+- **Batch & Watchdog Modes** - One-time processing or continuous monitoring
+- **Email Notifications** - Automatic reports on completion
+- **Dry-Run Mode** - Test without modifying database
+- **PDF Validation** - Automatically skips non-PDF attachments
+
+---
+
+## 📊 Dashboard
+
+The Squish dashboard provides real-time visibility into compression operations:
+
+- **Progress tracking** with percentage and record count
+- **Database size reduction** - Initial → Projected → Final
+- **Compression statistics** - Ratio, savings percentage
+- **Throughput metrics** - Records/sec, MB/sec
+- **System resources** - CPU, Memory, Active Threads gauges
+- **Activity log** - Last 50 processed files with status
+
+Access the dashboard at: `http://localhost:8080/`
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- Java 22 or higher
+- Maven 3.9+
+- Oracle Database connectivity
+
+### Build
+
+```bash
+mvn clean package -DskipTests
+```
+
+### Run
+
+```bash
+# Default profile
+java -jar target/pdf-compressor-modern-2.0.0.jar
+
+# With specific profile
+java -jar target/pdf-compressor-modern-2.0.0.jar --spring.profiles.active=prod
+
+# Dry-run mode (no database writes)
+java -jar target/pdf-compressor-modern-2.0.0.jar --compressor.dry-run=true
+```
+
+---
+
+## ⚙️ Configuration
+
+Configuration is managed via YAML files in `src/main/resources/`:
+
+| File | Description |
+|------|-------------|
+| `application.yml` | Base configuration |
+| `application-dev.yml` | Development profile |
+| `application-test.yml` | Test profile |
+| `application-prod.yml` | Production profile |
+
+### Configuration Options
+
+```yaml
+compressor:
+  # Compression mode: LOSSLESS, MEDIUM, AGGRESSIVE
+  mode: AGGRESSIVE
+  
+  # Dry-run mode (no database writes)
+  dry-run: false
+
+  database:
+    jdbc-url: jdbc:oracle:thin:@//host:1521/service
+    username: user
+    password: pass
+    max-pool-size: 12
+
+  pipeline:
+    worker-threads: 8      # Number of compression workers
+    id-from: 0             # Starting record ID
+    id-to: 0               # Ending record ID (0 = no limit)
+    fetch-size: 200        # DB fetch batch size
+    batch-size: 200        # Write batch size
+    queue-capacity: 500    # Internal queue size
+    throttle-millis: 0     # Throttle between records (ms)
+
+  http:
+    port: 8080             # Dashboard port
+
+  watchdog:
+    enabled: false         # Enable continuous monitoring
+    poll-interval-seconds: 60
+
+  email:
+    enabled: false
+    smtp-host: smtp.example.com
+    smtp-port: 587
+    ssl: true
+    from: noreply@example.com
+    to:
+      - admin@example.com
+```
+
+---
+
+## 🏗️ Architecture
+
+Squish uses a multi-stage pipeline architecture optimized for I/O-bound operations:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      SQUISH PIPELINE                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌──────────────┐                                          │
+│  │   Producer   │  Virtual Thread - Reads from Oracle DB   │
+│  │  (DB Read)   │                                          │
+│  └──────┬───────┘                                          │
+│         │                                                   │
+│         ▼ BlockingQueue<PdfTask>                           │
+│                                                             │
+│  ┌──────────────┐                                          │
+│  │ Worker Pool  │  Virtual Threads + Semaphore             │
+│  │ (Compress)   │  PDF validation + iText compression      │
+│  └──────┬───────┘                                          │
+│         │                                                   │
+│         ▼ BlockingQueue<CompressionResult>                 │
+│                                                             │
+│  ┌──────────────┐                                          │
+│  │ Writer Pool  │  Virtual Threads + Batch commits         │
+│  │  (DB Write)  │                                          │
+│  └──────────────┘                                          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Key Components
+
+| Package | Description |
+|---------|-------------|
+| `config/` | Spring Boot configuration properties |
+| `compression/` | PDF compression engine (iText 8) |
+| `pipeline/` | Pipeline orchestration, progress tracking |
+| `http/` | Dashboard and REST API |
+| `report/` | PDF report generation |
+| `email/` | SMTP email service |
+
+---
+
+## 📈 Compression Modes
+
+| Mode | Image Scaling | JPEG Quality | Best For |
+|------|---------------|--------------|----------|
+| **LOSSLESS** | 100% | 100% | Archival, legal documents |
+| **MEDIUM** | 85% | 80% | General office documents |
+| **AGGRESSIVE** | 70% | 60% | Maximum storage savings |
+
+---
+
+## 🔌 API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /` | Dashboard UI |
+| `GET /api/status` | JSON status with all metrics |
+| `GET /api/health` | Health check endpoint |
+
+### Example API Response
+
+```json
+{
+  "data": {
+    "read": 1000,
+    "compressed": 950,
+    "skipped": 30,
+    "updated": 950,
+    "errors": 20,
+    "savingsPercent": 85.5,
+    "progressPercent": 100.0
+  },
+  "mode": "DRY-RUN",
+  "system": {
+    "cpuPercent": 45.2,
+    "cpuCores": 10,
+    "memPercent": 35.0,
+    "activeThreads": 27
+  },
+  "activity": [...]
+}
+```
+
+---
+
+## 🛠️ Operating Modes
+
+### Batch Mode (Default)
+
+Processes all records from `id-from` to `id-to` and exits:
+
+```bash
+java -jar squish.jar --compressor.pipeline.id-from=1 --compressor.pipeline.id-to=10000
+```
+
+### Watchdog Mode
+
+Continuously monitors for new records:
+
+```bash
+java -jar squish.jar --compressor.watchdog.enabled=true
+```
+
+---
+
+## 📦 Dependencies
+
+| Dependency | Version | Purpose |
+|------------|---------|---------|
+| Spring Boot | 3.2.x | Application framework |
+| iText | 8.x | PDF manipulation |
+| HikariCP | 5.x | Connection pooling |
+| TwelveMonkeys | 3.x | Image I/O support |
+| Gson | 2.x | JSON serialization |
+| Jakarta Mail | 2.x | Email notifications |
+| Oracle JDBC | 23.x | Database connectivity |
+
+---
+
+## 📝 License
+
+Proprietary software. All rights reserved.
+
+**© 2024 Lucsartech Srl**
+
+---
+
+## 🤝 Support
+
+For support and inquiries, contact [Lucsartech Srl](https://lucsartech.com).

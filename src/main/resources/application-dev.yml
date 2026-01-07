@@ -1,0 +1,15 @@
+# Development Profile
+# ===================
+# Activate with: --spring.profiles.active=dev
+
+compressor:
+  dry-run: true  # Safe mode for development
+
+  pipeline:
+    worker-threads: 4
+    id-from: 30000
+    id-to: 31000  # Limited range for testing
+
+logging:
+  level:
+    com.lucsartech.pdf: DEBUG

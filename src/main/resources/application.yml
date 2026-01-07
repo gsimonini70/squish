@@ -1,0 +1,58 @@
+# PDF Compressor Modern - Configuration
+# =====================================
+# Use Spring profiles to switch between environments:
+#   java -jar app.jar --spring.profiles.active=prod
+
+spring:
+  application:
+    name: pdf-compressor-modern
+  profiles:
+    active: dev
+  main:
+    banner-mode: off
+
+# Compression settings
+compressor:
+  mode: AGGRESSIVE  # LOSSLESS, MEDIUM, AGGRESSIVE
+  dry-run: false
+
+  database:
+    jdbc-url: jdbc:oracle:thin:@//localhost:1521/ORCL
+    username: user
+    password: pass
+    max-pool-size: 12
+
+  pipeline:
+    worker-threads: 8
+    id-from: 0
+    id-to: 0  # 0 = no limit
+    fetch-size: 200
+    batch-size: 200
+    queue-capacity: 500
+    throttle-millis: 0
+
+  http:
+    port: 8080
+
+  watchdog:
+    enabled: false
+    poll-interval-seconds: 60
+
+  email:
+    enabled: false
+    smtp-host: smtp.example.com
+    smtp-port: 587
+    smtp-user:
+    smtp-password:
+    ssl: true
+    from: noreply@example.com
+    to:
+      - admin@example.com
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.lucsartech.pdf: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %clr(%5level) %clr([%15.15thread]){magenta} %clr(%-40.40logger{39}){cyan} - %msg%n"

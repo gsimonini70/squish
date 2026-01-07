@@ -1,0 +1,16 @@
+# Test Profile
+# ============
+# Activate with: --spring.profiles.active=test
+
+compressor:
+  database:
+    jdbc-url: jdbc:oracle:thin:@//fraviapp024.eur.mccormick.com:1521/fds1test
+    username: fidestest
+    password: s1nf02012t35t
+
+  pipeline:
+    worker-threads: 8
+
+logging:
+  level:
+    com.lucsartech.pdf: INFO
