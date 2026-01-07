@@ -91,6 +91,54 @@ journalctl -u squish -f
 
 ---
 
+## Linux Legacy (SysV Init - RHEL/CentOS 6, older systems)
+
+```bash
+# 1. Create service user
+sudo useradd -r -s /sbin/nologin squish
+
+# 2. Install files
+sudo mkdir -p /opt/squish/{logs,config}
+sudo cp squish.jar /opt/squish/
+sudo cp config/squish.env.template /opt/squish/config/squish.env
+sudo chown -R squish:squish /opt/squish
+sudo chmod 600 /opt/squish/config/squish.env
+
+# 3. Install init script
+sudo cp service/squish.init /etc/init.d/squish
+sudo chmod +x /etc/init.d/squish
+
+# 4. Enable service
+# RHEL/CentOS:
+sudo chkconfig --add squish
+sudo chkconfig squish on
+
+# Debian/Ubuntu (older):
+sudo update-rc.d squish defaults
+
+# 5. Configure (edit environment)
+sudo vi /etc/sysconfig/squish   # RHEL/CentOS
+sudo vi /etc/default/squish     # Debian/Ubuntu
+
+# 6. Start service
+sudo service squish start
+
+# 7. Check status
+sudo service squish status
+tail -f /var/log/squish.log
+```
+
+### Environment File (/etc/sysconfig/squish)
+
+```bash
+JAVA_HOME=/usr/lib/jvm/java-22
+JAVA_OPTS="-Xms512m -Xmx4g"
+SPRING_PROFILE=prod
+USER=squish
+```
+
+---
+
 ## Docker Installation
 
 ```bash
