@@ -80,7 +80,7 @@ public final class CompressionPipeline implements AutoCloseable {
     }
 
     /**
-     * Calculate initial statistics from database.
+     * Calculate initial statistics from database (excluding already processed).
      */
     public void calculateInitialStats() {
         var pipeline = properties.getPipeline();
@@ -91,6 +91,7 @@ public final class CompressionPipeline implements AutoCloseable {
             WHERE OTT_TIPO_DOC = '001030'
               AND OTTI_DATA IS NOT NULL
               AND OTT_ID >= ?
+              AND NOT EXISTS (SELECT 1 FROM SQUISH_PROCESSED SP WHERE SP.OTT_ID = OTTICA.OTT_ID)
             """ + (pipeline.hasUpperBound() ? " AND OTT_ID <= ?" : "");
 
         try (Connection conn = dataSource.getConnection();
@@ -190,6 +191,7 @@ public final class CompressionPipeline implements AutoCloseable {
             WHERE OTT_TIPO_DOC = '001030'
               AND OTTI_DATA IS NOT NULL
               AND OTT_ID >= ?
+              AND NOT EXISTS (SELECT 1 FROM SQUISH_PROCESSED SP WHERE SP.OTT_ID = OTTICA.OTT_ID)
             """ + (pipeline.hasUpperBound() ? " AND OTT_ID <= ?" : "");
 
         try (Connection conn = dataSource.getConnection();
@@ -325,9 +327,15 @@ public final class CompressionPipeline implements AutoCloseable {
 
         var pipeline = properties.getPipeline();
         String updateSql = "UPDATE OTTICAI SET OTTI_DATA = ? WHERE OTTI_ID = ?";
+        String trackingSql = """
+            INSERT INTO SQUISH_PROCESSED (OTT_ID, ORIGINAL_SIZE, COMPRESSED_SIZE, SAVINGS_PERCENT, STATUS, HOSTNAME)
+            VALUES (?, ?, ?, ?, 'SUCCESS', ?)
+            """;
+        String hostname = getHostname();
 
         try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(updateSql)) {
+             PreparedStatement updatePs = conn.prepareStatement(updateSql);
+             PreparedStatement trackingPs = conn.prepareStatement(trackingSql)) {
 
             conn.setAutoCommit(false);
             int batchCount = 0;
@@ -344,14 +352,27 @@ public final class CompressionPipeline implements AutoCloseable {
                 writerSemaphore.acquire();
                 try {
                     tracker.recordUpdate();
-                    ps.setBinaryStream(1, new ByteArrayInputStream(result.compressedData()),
+
+                    // Update compressed data
+                    updatePs.setBinaryStream(1, new ByteArrayInputStream(result.compressedData()),
                             result.compressedData().length);
-                    ps.setLong(2, result.id());
-                    ps.addBatch();
+                    updatePs.setLong(2, result.id());
+                    updatePs.addBatch();
+
+                    // Track in SQUISH_PROCESSED
+                    double savingsPercent = 100.0 * (1 - (double) result.compressedSize() / result.originalSize());
+                    trackingPs.setLong(1, result.id());
+                    trackingPs.setLong(2, result.originalSize());
+                    trackingPs.setLong(3, result.compressedSize());
+                    trackingPs.setDouble(4, savingsPercent);
+                    trackingPs.setString(5, hostname);
+                    trackingPs.addBatch();
+
                     batchCount++;
 
                     if (batchCount % pipeline.getBatchSize() == 0) {
-                        ps.executeBatch();
+                        updatePs.executeBatch();
+                        trackingPs.executeBatch();
                         conn.commit();
                         log.debug("[{}] Committed batch of {}", threadName, batchCount);
                     }
@@ -362,7 +383,8 @@ public final class CompressionPipeline implements AutoCloseable {
 
             // Final batch commit
             if (batchCount % pipeline.getBatchSize() != 0) {
-                ps.executeBatch();
+                updatePs.executeBatch();
+                trackingPs.executeBatch();
                 conn.commit();
                 log.debug("[{}] Final commit, total: {}", threadName, batchCount);
             }
@@ -370,6 +392,14 @@ public final class CompressionPipeline implements AutoCloseable {
         } catch (Exception e) {
             log.error("[{}] Writer error", threadName, e);
             tracker.recordError(-997, e);
+        }
+    }
+
+    private String getHostname() {
+        try {
+            return java.net.InetAddress.getLocalHost().getHostName();
+        } catch (Exception e) {
+            return "unknown";
         }
     }
 

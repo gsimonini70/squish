@@ -101,7 +101,7 @@ public final class WatchdogService implements AutoCloseable {
     }
 
     /**
-     * Calculate initial database statistics for progress tracking.
+     * Calculate initial database statistics for progress tracking (excluding already processed).
      */
     public void calculateInitialStats() {
         long startId = properties.getPipeline().getIdFrom();
@@ -112,6 +112,7 @@ public final class WatchdogService implements AutoCloseable {
             WHERE OTT_TIPO_DOC = '001030'
               AND OTTI_DATA IS NOT NULL
               AND OTT_ID > ?
+              AND NOT EXISTS (SELECT 1 FROM SQUISH_PROCESSED SP WHERE SP.OTT_ID = OTTICA.OTT_ID)
             """;
 
         try (Connection conn = dataSource.getConnection();
@@ -223,12 +224,12 @@ public final class WatchdogService implements AutoCloseable {
     }
 
     /**
-     * Process all new records since last processed ID.
+     * Process all new records since last processed ID (excluding already processed).
      */
     private int processNewRecords() {
         long startId = lastProcessedId.get();
 
-        // Query for new records
+        // Query for new records (excluding already processed)
         String sql = """
             SELECT OTT_ID, OTT_NOME_FILE, OTTI_DATA
             FROM OTTICA
@@ -236,6 +237,7 @@ public final class WatchdogService implements AutoCloseable {
             WHERE OTT_TIPO_DOC = '001030'
               AND OTTI_DATA IS NOT NULL
               AND OTT_ID > ?
+              AND NOT EXISTS (SELECT 1 FROM SQUISH_PROCESSED SP WHERE SP.OTT_ID = OTTICA.OTT_ID)
             ORDER BY OTT_ID
             """;
 
@@ -318,24 +320,48 @@ public final class WatchdogService implements AutoCloseable {
     }
 
     /**
-     * Update the database with compressed data.
+     * Update the database with compressed data and track in SQUISH_PROCESSED.
      */
     private void updateDatabase(CompressionResult.Success result) {
         String updateSql = "UPDATE OTTICAI SET OTTI_DATA = ? WHERE OTTI_ID = ?";
+        String trackingSql = """
+            INSERT INTO SQUISH_PROCESSED (OTT_ID, ORIGINAL_SIZE, COMPRESSED_SIZE, SAVINGS_PERCENT, STATUS, HOSTNAME)
+            VALUES (?, ?, ?, ?, 'SUCCESS', ?)
+            """;
 
         try (Connection conn = dataSource.getConnection();
-             PreparedStatement ps = conn.prepareStatement(updateSql)) {
+             PreparedStatement updatePs = conn.prepareStatement(updateSql);
+             PreparedStatement trackingPs = conn.prepareStatement(trackingSql)) {
 
-            ps.setBinaryStream(1,
+            // Update compressed data
+            updatePs.setBinaryStream(1,
                     new ByteArrayInputStream(result.compressedData()),
                     result.compressedData().length);
-            ps.setLong(2, result.id());
-            ps.executeUpdate();
+            updatePs.setLong(2, result.id());
+            updatePs.executeUpdate();
+
+            // Track in SQUISH_PROCESSED
+            double savingsPercent = 100.0 * (1 - (double) result.compressedSize() / result.originalSize());
+            trackingPs.setLong(1, result.id());
+            trackingPs.setLong(2, result.originalSize());
+            trackingPs.setLong(3, result.compressedSize());
+            trackingPs.setDouble(4, savingsPercent);
+            trackingPs.setString(5, getHostname());
+            trackingPs.executeUpdate();
+
             conn.commit();
 
         } catch (Exception e) {
             log.error("Failed to update ID {}", result.id(), e);
             tracker.recordError(result.id(), e);
+        }
+    }
+
+    private String getHostname() {
+        try {
+            return java.net.InetAddress.getLocalHost().getHostName();
+        } catch (Exception e) {
+            return "unknown";
         }
     }
 
