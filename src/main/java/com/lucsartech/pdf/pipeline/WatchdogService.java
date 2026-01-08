@@ -104,21 +104,25 @@ public final class WatchdogService implements AutoCloseable {
      * Calculate initial database statistics for progress tracking (excluding already processed).
      */
     public void calculateInitialStats() {
-        long startId = properties.getPipeline().getIdFrom();
+        var pipeline = properties.getPipeline();
+        long startId = pipeline.getIdFrom();
         String sql = """
             SELECT COUNT(*) AS cnt, NVL(SUM(DBMS_LOB.GETLENGTH(OTTI_DATA)), 0) AS total_size
             FROM OTTICA
             INNER JOIN OTTICAI ON OTT_ID = OTTI_ID
             WHERE OTT_TIPO_DOC = '001030'
               AND OTTI_DATA IS NOT NULL
-              AND OTT_ID > ?
+              AND OTT_ID >= ?
               AND NOT EXISTS (SELECT 1 FROM SQUISH_PROCESSED SP WHERE SP.OTT_ID = OTTICA.OTT_ID)
-            """;
+            """ + (pipeline.hasUpperBound() ? " AND OTT_ID <= ?" : "");
 
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setLong(1, startId);
+            if (pipeline.hasUpperBound()) {
+                ps.setLong(2, pipeline.getIdTo());
+            }
 
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
@@ -224,22 +228,22 @@ public final class WatchdogService implements AutoCloseable {
     }
 
     /**
-     * Process all new records since last processed ID (excluding already processed).
+     * Process all new records within configured ID range (excluding already processed).
      */
     private int processNewRecords() {
-        long startId = lastProcessedId.get();
+        var pipeline = properties.getPipeline();
+        long startId = Math.max(lastProcessedId.get(), pipeline.getIdFrom());
 
-        // Query for new records (excluding already processed)
+        // Query for new records (excluding already processed, respecting ID range)
         String sql = """
             SELECT OTT_ID, OTT_NOME_FILE, OTTI_DATA
             FROM OTTICA
             INNER JOIN OTTICAI ON OTT_ID = OTTI_ID
             WHERE OTT_TIPO_DOC = '001030'
               AND OTTI_DATA IS NOT NULL
-              AND OTT_ID > ?
+              AND OTT_ID >= ?
               AND NOT EXISTS (SELECT 1 FROM SQUISH_PROCESSED SP WHERE SP.OTT_ID = OTTICA.OTT_ID)
-            ORDER BY OTT_ID
-            """;
+            """ + (pipeline.hasUpperBound() ? " AND OTT_ID <= ?" : "") + " ORDER BY OTT_ID";
 
         int processedCount = 0;
         BlockingQueue<CompletableFuture<Void>> futures = new LinkedBlockingQueue<>();
@@ -248,8 +252,11 @@ public final class WatchdogService implements AutoCloseable {
              PreparedStatement ps = conn.prepareStatement(sql,
                      ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_READ_ONLY)) {
 
-            ps.setFetchSize(properties.getPipeline().getFetchSize());
+            ps.setFetchSize(pipeline.getFetchSize());
             ps.setLong(1, startId);
+            if (pipeline.hasUpperBound()) {
+                ps.setLong(2, pipeline.getIdTo());
+            }
 
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
