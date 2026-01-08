@@ -56,6 +56,11 @@ compressor:
 
   http:
     port: 8080
+    ssl-enabled: false           # Enable HTTPS
+    keystore-path: /path/to/keystore.p12
+    keystore-password: changeit
+    keystore-type: PKCS12        # or JKS
+    ssl-protocol: TLSv1.3
 
   watchdog:
     enabled: false
@@ -64,7 +69,15 @@ compressor:
   email:
     enabled: false
     smtp-host: smtp.example.com
-    smtp-port: 587
+    smtp-port: 587               # 587=STARTTLS, 465=SSL
+    smtp-user: user
+    smtp-password: pass
+    ssl: false                   # Direct SSL (port 465)
+    starttls: true               # STARTTLS (port 587)
+    ssl-protocols: TLSv1.2,TLSv1.3
+    trust-all-certs: false
+    connection-timeout: 10000
+    read-timeout: 30000
     from: noreply@example.com
     to:
       - admin@example.com

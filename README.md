@@ -85,7 +85,7 @@ Configuration is managed via YAML files in `src/main/resources/`:
 compressor:
   # Compression mode: LOSSLESS, MEDIUM, AGGRESSIVE
   mode: AGGRESSIVE
-  
+
   # Dry-run mode (no database writes)
   dry-run: false
 
@@ -104,18 +104,32 @@ compressor:
     queue-capacity: 500    # Internal queue size
     throttle-millis: 0     # Throttle between records (ms)
 
+  # HTTP/HTTPS Dashboard
   http:
-    port: 8080             # Dashboard port
+    port: 8080
+    ssl-enabled: false           # Enable HTTPS
+    keystore-path: /path/to/keystore.p12
+    keystore-password: changeit
+    keystore-type: PKCS12
+    ssl-protocol: TLSv1.3
 
   watchdog:
     enabled: false         # Enable continuous monitoring
     poll-interval-seconds: 60
 
+  # Email notifications with secure protocols
   email:
     enabled: false
     smtp-host: smtp.example.com
-    smtp-port: 587
-    ssl: true
+    smtp-port: 587               # 587=STARTTLS, 465=SSL
+    smtp-user: user
+    smtp-password: pass
+    ssl: false                   # Direct SSL (port 465)
+    starttls: true               # STARTTLS (port 587)
+    ssl-protocols: TLSv1.2,TLSv1.3
+    trust-all-certs: false       # Only for testing
+    connection-timeout: 10000
+    read-timeout: 30000
     from: noreply@example.com
     to:
       - admin@example.com
@@ -227,6 +241,43 @@ Continuously monitors for new records:
 
 ```bash
 java -jar squish.jar --compressor.watchdog.enabled=true
+```
+
+---
+
+## 🔒 Security
+
+### HTTPS Dashboard
+
+Generate a self-signed certificate:
+
+```bash
+keytool -genkeypair -alias squish -keyalg RSA -keysize 2048 \
+  -storetype PKCS12 -keystore squish.p12 -validity 3650
+```
+
+Enable in configuration:
+
+```yaml
+compressor:
+  http:
+    ssl-enabled: true
+    keystore-path: /path/to/squish.p12
+    keystore-password: changeit
+    ssl-protocol: TLSv1.3
+```
+
+### Secure Email (SMTP)
+
+Supports both STARTTLS (port 587) and direct SSL (port 465):
+
+```yaml
+compressor:
+  email:
+    smtp-host: smtp.office365.com
+    smtp-port: 587
+    starttls: true
+    ssl-protocols: TLSv1.2,TLSv1.3
 ```
 
 ---

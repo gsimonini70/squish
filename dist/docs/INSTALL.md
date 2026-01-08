@@ -167,9 +167,28 @@ docker-compose up -d
 
 | Variable | Description | Default |
 |----------|-------------|---------|
+| **Database** | | |
 | `DB_URL` | Oracle JDBC URL | - |
 | `DB_USER` | Database username | - |
 | `DB_PASSWORD` | Database password | - |
+| **SMTP Email** | | |
+| `SMTP_HOST` | SMTP server hostname | - |
+| `SMTP_PORT` | SMTP port (587=STARTTLS, 465=SSL) | `587` |
+| `SMTP_USER` | SMTP username | - |
+| `SMTP_PASSWORD` | SMTP password | - |
+| `SMTP_SSL` | Use direct SSL connection | `false` |
+| `SMTP_STARTTLS` | Use STARTTLS upgrade | `true` |
+| `SMTP_SSL_PROTOCOLS` | Allowed TLS versions | `TLSv1.2,TLSv1.3` |
+| `SMTP_FROM` | Sender email address | - |
+| `SMTP_TO` | Recipient email address | - |
+| **HTTPS Dashboard** | | |
+| `HTTP_PORT` | Dashboard port | `8080` |
+| `HTTP_SSL_ENABLED` | Enable HTTPS | `false` |
+| `HTTP_KEYSTORE_PATH` | Path to PKCS12 keystore | - |
+| `HTTP_KEYSTORE_PASSWORD` | Keystore password | - |
+| `HTTP_KEYSTORE_TYPE` | Keystore type | `PKCS12` |
+| `HTTP_SSL_PROTOCOL` | TLS protocol version | `TLSv1.3` |
+| **General** | | |
 | `JAVA_OPTS` | JVM options | `-Xms256m -Xmx2g` |
 | `SPRING_PROFILES_ACTIVE` | Config profile | `prod` |
 
@@ -193,9 +212,84 @@ JAVA_OPTS="-Xms256m -Xmx1g -XX:+UseSerialGC"
 
 ---
 
+## HTTPS Configuration
+
+To enable HTTPS for the dashboard:
+
+### 1. Generate a Self-Signed Certificate
+
+```bash
+keytool -genkeypair -alias squish -keyalg RSA -keysize 2048 \
+  -storetype PKCS12 -keystore /opt/squish/config/squish.p12 \
+  -validity 3650 -storepass changeit \
+  -dname "CN=squish, OU=IT, O=Company, L=City, S=State, C=IT"
+```
+
+### 2. Configure Environment
+
+```bash
+# In squish.env
+HTTP_SSL_ENABLED=true
+HTTP_KEYSTORE_PATH=/opt/squish/config/squish.p12
+HTTP_KEYSTORE_PASSWORD=changeit
+HTTP_KEYSTORE_TYPE=PKCS12
+HTTP_SSL_PROTOCOL=TLSv1.3
+```
+
+### 3. Access Dashboard
+
+```
+https://localhost:8080/
+```
+
+> **Note**: For production, use a certificate from a trusted CA.
+
+---
+
+## SMTP Email Configuration
+
+### STARTTLS (Port 587 - Recommended)
+
+```bash
+# In squish.env
+SMTP_HOST=smtp.company.com
+SMTP_PORT=587
+SMTP_USER=user@company.com
+SMTP_PASSWORD=secret
+SMTP_STARTTLS=true
+SMTP_SSL=false
+SMTP_SSL_PROTOCOLS=TLSv1.2,TLSv1.3
+SMTP_FROM=squish@company.com
+SMTP_TO=it-operations@company.com
+```
+
+### Direct SSL (Port 465)
+
+```bash
+# In squish.env
+SMTP_HOST=smtp.company.com
+SMTP_PORT=465
+SMTP_USER=user@company.com
+SMTP_PASSWORD=secret
+SMTP_STARTTLS=false
+SMTP_SSL=true
+SMTP_SSL_PROTOCOLS=TLSv1.2,TLSv1.3
+```
+
+### Common SMTP Servers
+
+| Provider | Host | Port | Auth |
+|----------|------|------|------|
+| Office 365 | smtp.office365.com | 587 | STARTTLS |
+| Gmail | smtp.gmail.com | 587 | STARTTLS |
+| Amazon SES | email-smtp.region.amazonaws.com | 587 | STARTTLS |
+| On-premise | smtp.company.local | 25/587 | Optional |
+
+---
+
 ## Monitoring
 
-- **Dashboard**: http://localhost:8080/
+- **Dashboard**: http://localhost:8080/ (or https:// if SSL enabled)
 - **API Status**: http://localhost:8080/api/status
 - **Health Check**: http://localhost:8080/api/health
 
