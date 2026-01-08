@@ -3,34 +3,32 @@
 -- ============================================
 -- Stores compression history to avoid re-processing
 -- Run this script once before first execution
+--
+-- Usage: sqlplus user/pass@db @create_tracking_table.sql
+-- ============================================
 
 CREATE TABLE SQUISH_PROCESSED (
     ID              NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    OTT_ID          NUMBER NOT NULL,
+    OTT_ID          NUMBER NOT NULL UNIQUE,
     ORIGINAL_SIZE   NUMBER NOT NULL,
     COMPRESSED_SIZE NUMBER,
     SAVINGS_PERCENT NUMBER(5,2),
-    STATUS          VARCHAR2(20) NOT NULL,  -- SUCCESS, SKIPPED, ERROR
+    STATUS          VARCHAR2(20) NOT NULL,
     ERROR_MESSAGE   VARCHAR2(500),
     PROCESSED_DATE  TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
-    HOSTNAME        VARCHAR2(100),
-
-    CONSTRAINT UK_SQUISH_OTT_ID UNIQUE (OTT_ID)
+    HOSTNAME        VARCHAR2(100)
 );
 
--- Index for fast lookups
 CREATE INDEX IDX_SQUISH_PROCESSED_DATE ON SQUISH_PROCESSED(PROCESSED_DATE);
+
 CREATE INDEX IDX_SQUISH_STATUS ON SQUISH_PROCESSED(STATUS);
 
--- Comments
 COMMENT ON TABLE SQUISH_PROCESSED IS 'Squish PDF compression tracking table';
+
 COMMENT ON COLUMN SQUISH_PROCESSED.OTT_ID IS 'Reference to OTTICA.OTT_ID';
+
 COMMENT ON COLUMN SQUISH_PROCESSED.STATUS IS 'SUCCESS=compressed, SKIPPED=not a PDF, ERROR=failed';
 
--- Grant permissions (adjust as needed)
--- GRANT SELECT, INSERT, UPDATE, DELETE ON SQUISH_PROCESSED TO fides;
-
--- View for statistics
 CREATE OR REPLACE VIEW SQUISH_STATS AS
 SELECT
     STATUS,
@@ -42,3 +40,7 @@ SELECT
     MAX(PROCESSED_DATE) AS LAST_PROCESSED
 FROM SQUISH_PROCESSED
 GROUP BY STATUS;
+
+COMMIT;
+
+SELECT 'SQUISH_PROCESSED table created successfully' AS STATUS FROM DUAL;
