@@ -35,9 +35,32 @@ public final class EmailService {
         props.put("mail.smtp.host", config.getSmtpHost());
         props.put("mail.smtp.port", String.valueOf(config.getSmtpPort()));
 
+        // Timeout settings
+        props.put("mail.smtp.connectiontimeout", String.valueOf(config.getConnectionTimeout()));
+        props.put("mail.smtp.timeout", String.valueOf(config.getReadTimeout()));
+        props.put("mail.smtp.writetimeout", String.valueOf(config.getReadTimeout()));
+
+        // SSL/TLS configuration
         if (config.isSsl()) {
+            // Direct SSL connection (typically port 465)
+            props.put("mail.smtp.ssl.enable", "true");
+            props.put("mail.smtp.ssl.protocols", config.getSslProtocols());
+            props.put("mail.smtp.ssl.checkserveridentity", String.valueOf(!config.isTrustAllCerts()));
+
+            if (config.isTrustAllCerts()) {
+                props.put("mail.smtp.ssl.trust", "*");
+            }
+        }
+
+        if (config.isStarttls()) {
+            // STARTTLS upgrade (typically port 587)
             props.put("mail.smtp.starttls.enable", "true");
-            props.put("mail.smtp.ssl.protocols", "TLSv1.2");
+            props.put("mail.smtp.starttls.required", "true");
+            props.put("mail.smtp.ssl.protocols", config.getSslProtocols());
+
+            if (config.isTrustAllCerts()) {
+                props.put("mail.smtp.ssl.trust", "*");
+            }
         }
 
         if (config.hasAuth()) {

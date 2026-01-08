@@ -3,16 +3,26 @@ package com.lucsartech.pdf.http;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.lucsartech.pdf.config.CompressionMode;
+import com.lucsartech.pdf.config.PdfCompressorProperties;
 import com.lucsartech.pdf.pipeline.ProgressTracker;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import com.sun.net.httpserver.HttpsConfigurator;
+import com.sun.net.httpserver.HttpsParameters;
+import com.sun.net.httpserver.HttpsServer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.net.ssl.KeyManagerFactory;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLParameters;
+import javax.net.ssl.TrustManagerFactory;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
 import java.util.concurrent.Executors;
 
 /**
@@ -27,28 +37,95 @@ public final class MonitorServer implements AutoCloseable {
     private final boolean dryRun;
     private final boolean watchMode;
     private final CompressionMode compressionMode;
+    private final PdfCompressorProperties.Http httpConfig;
     private HttpServer server;
 
     public MonitorServer(ProgressTracker tracker, boolean dryRun, CompressionMode compressionMode) {
-        this(tracker, dryRun, false, compressionMode);
+        this(tracker, dryRun, false, compressionMode, null);
     }
 
     public MonitorServer(ProgressTracker tracker, boolean dryRun, boolean watchMode, CompressionMode compressionMode) {
+        this(tracker, dryRun, watchMode, compressionMode, null);
+    }
+
+    public MonitorServer(ProgressTracker tracker, boolean dryRun, boolean watchMode,
+                         CompressionMode compressionMode, PdfCompressorProperties.Http httpConfig) {
         this.tracker = tracker;
         this.dryRun = dryRun;
         this.watchMode = watchMode;
         this.compressionMode = compressionMode;
+        this.httpConfig = httpConfig;
     }
 
     public void start(int port) throws IOException {
+        boolean sslEnabled = httpConfig != null && httpConfig.isSslEnabled();
+
+        if (sslEnabled) {
+            startHttpsServer(port);
+        } else {
+            startHttpServer(port);
+        }
+    }
+
+    private void startHttpServer(int port) throws IOException {
         server = HttpServer.create(new InetSocketAddress(port), 0);
-        server.createContext("/", this::handleDashboard);
-        server.createContext("/api/status", this::handleStatus);
-        server.createContext("/api/health", this::handleHealth);
+        configureContexts(server);
         server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
         server.start();
 
         log.info("Monitor server started at http://localhost:{}", port);
+    }
+
+    private void startHttpsServer(int port) throws IOException {
+        try {
+            // Load keystore
+            KeyStore keyStore = KeyStore.getInstance(httpConfig.getKeystoreType());
+            char[] password = httpConfig.getKeystorePassword().toCharArray();
+
+            try (FileInputStream fis = new FileInputStream(httpConfig.getKeystorePath())) {
+                keyStore.load(fis, password);
+            }
+
+            // Initialize key manager
+            KeyManagerFactory kmf = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            kmf.init(keyStore, password);
+
+            // Initialize trust manager
+            TrustManagerFactory tmf = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            tmf.init(keyStore);
+
+            // Create SSL context
+            SSLContext sslContext = SSLContext.getInstance(httpConfig.getSslProtocol());
+            sslContext.init(kmf.getKeyManagers(), tmf.getTrustManagers(), null);
+
+            // Create HTTPS server
+            HttpsServer httpsServer = HttpsServer.create(new InetSocketAddress(port), 0);
+            httpsServer.setHttpsConfigurator(new HttpsConfigurator(sslContext) {
+                @Override
+                public void configure(HttpsParameters params) {
+                    SSLParameters sslParams = sslContext.getDefaultSSLParameters();
+                    sslParams.setProtocols(new String[]{httpConfig.getSslProtocol()});
+                    params.setSSLParameters(sslParams);
+                }
+            });
+
+            configureContexts(httpsServer);
+            httpsServer.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
+            httpsServer.start();
+
+            server = httpsServer;
+            log.info("Monitor server started at https://localhost:{} (TLS {})", port, httpConfig.getSslProtocol());
+
+        } catch (Exception e) {
+            log.error("Failed to start HTTPS server, falling back to HTTP", e);
+            startHttpServer(port);
+        }
+    }
+
+    private void configureContexts(HttpServer httpServer) {
+        httpServer.createContext("/", this::handleDashboard);
+        httpServer.createContext("/api/status", this::handleStatus);
+        httpServer.createContext("/api/health", this::handleHealth);
     }
 
     private void handleStatus(HttpExchange exchange) throws IOException {

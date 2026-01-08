@@ -45,3 +45,4 @@ test-output/
 surefire-reports/
 compression_report_*.pdf
 dependency-reduced-pom.xml
+*.pdf

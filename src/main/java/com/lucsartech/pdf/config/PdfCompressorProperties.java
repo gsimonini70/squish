@@ -97,16 +97,6 @@ public class PdfCompressorProperties {
     }
 
     /**
-     * HTTP monitoring server configuration.
-     */
-    public static class Http {
-        private int port = 8080;
-
-        public int getPort() { return port; }
-        public void setPort(int port) { this.port = port; }
-    }
-
-    /**
      * Watchdog (continuous monitoring) configuration.
      */
     public static class Watchdog {
@@ -130,6 +120,11 @@ public class PdfCompressorProperties {
         private String smtpUser;
         private String smtpPassword;
         private boolean ssl = true;
+        private boolean starttls = true;
+        private String sslProtocols = "TLSv1.2,TLSv1.3";
+        private boolean trustAllCerts = false;
+        private int connectionTimeout = 10000;
+        private int readTimeout = 30000;
         private String from;
         private List<String> to = new ArrayList<>();
 
@@ -151,6 +146,21 @@ public class PdfCompressorProperties {
         public boolean isSsl() { return ssl; }
         public void setSsl(boolean ssl) { this.ssl = ssl; }
 
+        public boolean isStarttls() { return starttls; }
+        public void setStarttls(boolean starttls) { this.starttls = starttls; }
+
+        public String getSslProtocols() { return sslProtocols; }
+        public void setSslProtocols(String sslProtocols) { this.sslProtocols = sslProtocols; }
+
+        public boolean isTrustAllCerts() { return trustAllCerts; }
+        public void setTrustAllCerts(boolean trustAllCerts) { this.trustAllCerts = trustAllCerts; }
+
+        public int getConnectionTimeout() { return connectionTimeout; }
+        public void setConnectionTimeout(int connectionTimeout) { this.connectionTimeout = connectionTimeout; }
+
+        public int getReadTimeout() { return readTimeout; }
+        public void setReadTimeout(int readTimeout) { this.readTimeout = readTimeout; }
+
         public String getFrom() { return from; }
         public void setFrom(String from) { this.from = from; }
 
@@ -160,5 +170,35 @@ public class PdfCompressorProperties {
         public boolean hasAuth() {
             return smtpUser != null && !smtpUser.isBlank();
         }
+    }
+
+    /**
+     * HTTP monitoring server configuration.
+     */
+    public static class Http {
+        private int port = 8080;
+        private boolean sslEnabled = false;
+        private String keystorePath;
+        private String keystorePassword;
+        private String keystoreType = "PKCS12";
+        private String sslProtocol = "TLSv1.3";
+
+        public int getPort() { return port; }
+        public void setPort(int port) { this.port = port; }
+
+        public boolean isSslEnabled() { return sslEnabled; }
+        public void setSslEnabled(boolean sslEnabled) { this.sslEnabled = sslEnabled; }
+
+        public String getKeystorePath() { return keystorePath; }
+        public void setKeystorePath(String keystorePath) { this.keystorePath = keystorePath; }
+
+        public String getKeystorePassword() { return keystorePassword; }
+        public void setKeystorePassword(String keystorePassword) { this.keystorePassword = keystorePassword; }
+
+        public String getKeystoreType() { return keystoreType; }
+        public void setKeystoreType(String keystoreType) { this.keystoreType = keystoreType; }
+
+        public String getSslProtocol() { return sslProtocol; }
+        public void setSslProtocol(String sslProtocol) { this.sslProtocol = sslProtocol; }
     }
 }

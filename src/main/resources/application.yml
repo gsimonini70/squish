@@ -31,20 +31,36 @@ compressor:
     queue-capacity: 500
     throttle-millis: 0
 
+  # HTTP/HTTPS Dashboard Configuration
   http:
     port: 8080
+    ssl-enabled: false                    # Enable HTTPS
+    keystore-path: /path/to/keystore.p12  # Path to PKCS12 keystore
+    keystore-password: changeit           # Keystore password
+    keystore-type: PKCS12                 # PKCS12 or JKS
+    ssl-protocol: TLSv1.3                 # TLSv1.2 or TLSv1.3
 
   watchdog:
     enabled: false
     poll-interval-seconds: 60
 
+  # Email Notification Configuration
   email:
     enabled: false
-    smtp-host: smtp.example.com
-    smtp-port: 587
-    smtp-user:
-    smtp-password:
-    ssl: true
+    # SMTP Server Settings
+    smtp-host: smtp.example.com           # SMTP server hostname
+    smtp-port: 587                        # 587 for STARTTLS, 465 for SSL
+    smtp-user:                            # SMTP username (leave empty for no auth)
+    smtp-password:                        # SMTP password
+    # Security Settings
+    ssl: false                            # Use direct SSL (port 465)
+    starttls: true                        # Use STARTTLS upgrade (port 587)
+    ssl-protocols: TLSv1.2,TLSv1.3        # Allowed TLS versions
+    trust-all-certs: false                # Trust all certificates (NOT recommended for prod)
+    # Timeout Settings
+    connection-timeout: 10000             # Connection timeout in ms
+    read-timeout: 30000                   # Read timeout in ms
+    # Email Addresses
     from: noreply@example.com
     to:
       - admin@example.com

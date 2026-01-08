@@ -16,19 +16,35 @@ compressor:
     id-from: 0
     id-to: 0  # Process all
 
+  # HTTPS Dashboard (optional)
+  http:
+    port: ${HTTP_PORT:8080}
+    ssl-enabled: ${HTTP_SSL_ENABLED:false}
+    keystore-path: ${HTTP_KEYSTORE_PATH:}
+    keystore-password: ${HTTP_KEYSTORE_PASSWORD:}
+    keystore-type: ${HTTP_KEYSTORE_TYPE:PKCS12}
+    ssl-protocol: ${HTTP_SSL_PROTOCOL:TLSv1.3}
+
   watchdog:
     enabled: true
     poll-interval-seconds: 300  # 5 minutes
 
+  # Email with secure protocols
   email:
     enabled: true
     smtp-host: ${SMTP_HOST:smtp.company.com}
     smtp-port: ${SMTP_PORT:587}
     smtp-user: ${SMTP_USER:}
     smtp-password: ${SMTP_PASSWORD:}
-    from: pdf-compressor@company.com
+    ssl: ${SMTP_SSL:false}
+    starttls: ${SMTP_STARTTLS:true}
+    ssl-protocols: ${SMTP_SSL_PROTOCOLS:TLSv1.2,TLSv1.3}
+    trust-all-certs: false
+    connection-timeout: 10000
+    read-timeout: 30000
+    from: ${SMTP_FROM:pdf-compressor@company.com}
     to:
-      - it-operations@company.com
+      - ${SMTP_TO:it-operations@company.com}
 
 logging:
   level:
