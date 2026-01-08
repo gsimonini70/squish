@@ -1,5 +1,5 @@
 -- ============================================
--- Squish - Tracking Table DDL
+-- Squish - Tracking Table DDL (Oracle 11g compatible)
 -- ============================================
 -- Stores compression history to avoid re-processing
 -- Run this script once before first execution
@@ -7,8 +7,12 @@
 -- Usage: sqlplus user/pass@db @create_tracking_table.sql
 -- ============================================
 
+-- Create sequence for ID
+CREATE SEQUENCE SQUISH_PROCESSED_SEQ START WITH 1 INCREMENT BY 1 NOCACHE;
+
+-- Create table
 CREATE TABLE SQUISH_PROCESSED (
-    ID              NUMBER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    ID              NUMBER PRIMARY KEY,
     OTT_ID          NUMBER NOT NULL UNIQUE,
     ORIGINAL_SIZE   NUMBER NOT NULL,
     COMPRESSED_SIZE NUMBER,
@@ -18,6 +22,17 @@ CREATE TABLE SQUISH_PROCESSED (
     PROCESSED_DATE  TIMESTAMP DEFAULT SYSTIMESTAMP NOT NULL,
     HOSTNAME        VARCHAR2(100)
 );
+
+-- Create trigger for auto-increment ID
+CREATE OR REPLACE TRIGGER SQUISH_PROCESSED_TRG
+BEFORE INSERT ON SQUISH_PROCESSED
+FOR EACH ROW
+BEGIN
+    IF :NEW.ID IS NULL THEN
+        SELECT SQUISH_PROCESSED_SEQ.NEXTVAL INTO :NEW.ID FROM DUAL;
+    END IF;
+END;
+/
 
 CREATE INDEX IDX_SQUISH_PROCESSED_DATE ON SQUISH_PROCESSED(PROCESSED_DATE);
 
