@@ -84,9 +84,34 @@ start() {
 
     cd "$APP_HOME" || exit 1
     
+    # Export all variables for Java process
+    export JAVA_HOME JAVA_OPTS
+    export DB_URL DB_USER DB_PASSWORD
+    export COMPRESSION_MODE DRY_RUN
+    export WORKER_THREADS ID_FROM ID_TO
+    export WATCHDOG_ENABLED WATCHDOG_INTERVAL
+    export EMAIL_ENABLED SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASSWORD
+    export SMTP_SSL SMTP_STARTTLS SMTP_SSL_PROTOCOLS SMTP_FROM SMTP_TO
+    export HTTP_PORT HTTP_SSL_ENABLED HTTP_KEYSTORE_PATH HTTP_KEYSTORE_PASSWORD
+    export SPRING_PROFILES_ACTIVE
+
     if [ -n "$USER" ]; then
-        su -s /bin/sh "$USER" -c "nohup $JAVA $JAVA_OPTS -jar $JAR_FILE --spring.profiles.active=$SPRING_PROFILE >> $LOG_FILE 2>&1 &
-        echo \$! > $PID_FILE"
+        su -s /bin/sh "$USER" -c "
+            export JAVA_HOME='$JAVA_HOME'
+            export DB_URL='$DB_URL'
+            export DB_USER='$DB_USER'
+            export DB_PASSWORD='$DB_PASSWORD'
+            export COMPRESSION_MODE='$COMPRESSION_MODE'
+            export DRY_RUN='$DRY_RUN'
+            export WORKER_THREADS='$WORKER_THREADS'
+            export WATCHDOG_ENABLED='$WATCHDOG_ENABLED'
+            export WATCHDOG_INTERVAL='$WATCHDOG_INTERVAL'
+            export EMAIL_ENABLED='$EMAIL_ENABLED'
+            export SMTP_HOST='$SMTP_HOST'
+            export SPRING_PROFILES_ACTIVE='$SPRING_PROFILES_ACTIVE'
+            nohup $JAVA $JAVA_OPTS -jar $JAR_FILE --spring.profiles.active=$SPRING_PROFILE >> $LOG_FILE 2>&1 &
+            echo \$! > $PID_FILE
+        "
     else
         nohup $JAVA $JAVA_OPTS -jar $JAR_FILE --spring.profiles.active=$SPRING_PROFILE >> $LOG_FILE 2>&1 &
         echo $! > "$PID_FILE"
