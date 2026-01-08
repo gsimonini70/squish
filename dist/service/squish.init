@@ -24,8 +24,8 @@ NAME=squish
 DESC="Squish PDF Compression Engine"
 APP_HOME=/opt/squish
 JAR_FILE=$APP_HOME/squish.jar
-PID_FILE=/var/run/squish.pid
-LOG_FILE=/var/log/squish.log
+PID_FILE=$APP_HOME/squish.pid
+LOG_FILE=$APP_HOME/logs/squish.log
 USER=squish
 
 # Source function library (RHEL/CentOS)
@@ -67,7 +67,7 @@ check_java() {
 
 start() {
     check_java
-    
+
     if [ -f "$PID_FILE" ]; then
         PID=$(cat "$PID_FILE")
         if ps -p "$PID" > /dev/null 2>&1; then
@@ -75,9 +75,13 @@ start() {
             return 1
         fi
     fi
-    
+
     echo "Starting $DESC..."
-    
+
+    # Ensure logs directory exists
+    mkdir -p "$APP_HOME/logs"
+    chown $USER:$USER "$APP_HOME/logs" 2>/dev/null
+
     cd "$APP_HOME" || exit 1
     
     if [ -n "$USER" ]; then
