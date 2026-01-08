@@ -28,11 +28,6 @@ PID_FILE=/var/run/squish.pid
 LOG_FILE=/var/log/squish.log
 USER=squish
 
-# Java configuration
-JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-22}
-JAVA_OPTS="-Xms512m -Xmx4g"
-SPRING_PROFILE=prod
-
 # Source function library (RHEL/CentOS)
 if [ -f /etc/rc.d/init.d/functions ]; then
     . /etc/rc.d/init.d/functions
@@ -43,12 +38,22 @@ if [ -f /lib/lsb/init-functions ]; then
     . /lib/lsb/init-functions
 fi
 
-# Load environment file if exists
+# Load environment files (in order of priority)
+# 1. Application config (primary)
+if [ -f $APP_HOME/config/squish.env ]; then
+    . $APP_HOME/config/squish.env
+fi
+# 2. System config (override)
 if [ -f /etc/sysconfig/squish ]; then
     . /etc/sysconfig/squish
 elif [ -f /etc/default/squish ]; then
     . /etc/default/squish
 fi
+
+# Java configuration (defaults if not set in env files)
+JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-22}
+JAVA_OPTS=${JAVA_OPTS:-"-Xms512m -Xmx4g"}
+SPRING_PROFILE=${SPRING_PROFILES_ACTIVE:-prod}
 
 JAVA=$JAVA_HOME/bin/java
 
