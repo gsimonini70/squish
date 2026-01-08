@@ -11,6 +11,27 @@ JAR_FILE="squish.jar"
 PID_FILE="squish.pid"
 LOG_FILE="squish.log"
 
+# Get script directory (POSIX compatible)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+APP_HOME="$(dirname "$SCRIPT_DIR")"
+
+# Load environment file if exists
+ENV_FILE="$APP_HOME/config/squish.env"
+if [ -f "$ENV_FILE" ]; then
+    . "$ENV_FILE"
+fi
+
+# Java executable (use JAVA_HOME if set)
+if [ -n "$JAVA_HOME" ]; then
+    JAVA_CMD="$JAVA_HOME/bin/java"
+    if [ ! -x "$JAVA_CMD" ]; then
+        echo "ERROR: JAVA_HOME is set but $JAVA_CMD not found or not executable"
+        exit 1
+    fi
+else
+    JAVA_CMD="java"
+fi
+
 # Java options (can be overridden via environment)
 if [ -z "$JAVA_OPTS" ]; then
     JAVA_OPTS="-Xms256m -Xmx2g"
@@ -22,22 +43,20 @@ if [ -z "$SPRING_PROFILES_ACTIVE" ]; then
 fi
 PROFILE="$SPRING_PROFILES_ACTIVE"
 
-# Get script directory (POSIX compatible)
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_HOME="$(dirname "$SCRIPT_DIR")"
-
 # Check Java
 check_java() {
-    if ! which java > /dev/null 2>&1; then
-        echo "ERROR: Java not found. Please install Java 22 or higher."
+    if ! "$JAVA_CMD" -version > /dev/null 2>&1; then
+        echo "ERROR: Java not found. Please install Java 22 or set JAVA_HOME."
         exit 1
     fi
-    
-    JAVA_VERSION=$(java -version 2>&1 | head -1 | cut -d'"' -f2 | cut -d'.' -f1)
+
+    JAVA_VERSION=$("$JAVA_CMD" -version 2>&1 | head -1 | cut -d'"' -f2 | cut -d'.' -f1)
     if [ "$JAVA_VERSION" -lt 22 ] 2>/dev/null; then
         echo "ERROR: Java 22 or higher required. Found version: $JAVA_VERSION"
+        echo "       Set JAVA_HOME to point to Java 22+ installation"
         exit 1
     fi
+    echo "Using Java: $JAVA_CMD (version $JAVA_VERSION)"
 }
 
 start() {
@@ -54,7 +73,7 @@ start() {
     echo "Starting $APP_NAME..."
     cd "$APP_HOME" || exit 1
     
-    nohup java $JAVA_OPTS -jar "$JAR_FILE" \
+    nohup "$JAVA_CMD" $JAVA_OPTS -jar "$JAR_FILE" \
         --spring.profiles.active="$PROFILE" \
         > "$LOG_FILE" 2>&1 &
     
