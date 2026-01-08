@@ -3,7 +3,8 @@
 # Activate with: --spring.profiles.active=prod
 
 compressor:
-  dry-run: false
+  mode: ${COMPRESSION_MODE:AGGRESSIVE}
+  dry-run: ${DRY_RUN:false}
 
   database:
     jdbc-url: ${DB_URL:jdbc:oracle:thin:@//localhost:1521/ORCLPDB1}
@@ -12,9 +13,9 @@ compressor:
     max-pool-size: 16
 
   pipeline:
-    worker-threads: 16
-    id-from: 0
-    id-to: 0  # Process all
+    worker-threads: ${WORKER_THREADS:16}
+    id-from: ${ID_FROM:0}
+    id-to: ${ID_TO:0}
 
   # HTTPS Dashboard (optional)
   http:
@@ -26,12 +27,12 @@ compressor:
     ssl-protocol: ${HTTP_SSL_PROTOCOL:TLSv1.3}
 
   watchdog:
-    enabled: true
-    poll-interval-seconds: 300  # 5 minutes
+    enabled: ${WATCHDOG_ENABLED:true}
+    poll-interval-seconds: ${WATCHDOG_INTERVAL:300}
 
   # Email with secure protocols
   email:
-    enabled: true
+    enabled: ${EMAIL_ENABLED:true}
     smtp-host: ${SMTP_HOST:smtp.company.com}
     smtp-port: ${SMTP_PORT:587}
     smtp-user: ${SMTP_USER:}
