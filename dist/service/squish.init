@@ -38,36 +38,11 @@ if [ -f /lib/lsb/init-functions ]; then
     . /lib/lsb/init-functions
 fi
 
-# Load environment files (in order of priority)
-# 1. Application config (primary)
-if [ -f $APP_HOME/config/squish.env ]; then
-    . $APP_HOME/config/squish.env
-fi
-# 2. System config (override)
-if [ -f /etc/sysconfig/squish ]; then
-    . /etc/sysconfig/squish
-elif [ -f /etc/default/squish ]; then
-    . /etc/default/squish
-fi
-
-# Java configuration (defaults if not set in env files)
-JAVA_HOME=${JAVA_HOME:-/usr/lib/jvm/java-22}
-JAVA_OPTS=${JAVA_OPTS:-"-Xms512m -Xmx4g"}
-SPRING_PROFILE=${SPRING_PROFILES_ACTIVE:-prod}
-
-JAVA=$JAVA_HOME/bin/java
-
-check_java() {
-    if [ ! -x "$JAVA" ]; then
-        echo "ERROR: Java not found at $JAVA"
-        echo "Set JAVA_HOME environment variable"
-        exit 1
-    fi
-}
+# Note: Configuration (JAVA_HOME, DB credentials, etc.) is loaded from
+# $APP_HOME/config/squish.env by the wrapper script that runs as $USER.
+# This ensures credentials are NOT visible in ps aux.
 
 start() {
-    check_java
-
     if [ -f "$PID_FILE" ]; then
         PID=$(cat "$PID_FILE")
         if ps -p "$PID" > /dev/null 2>&1; then
@@ -82,98 +57,109 @@ start() {
     mkdir -p "$APP_HOME/logs"
     chown $USER:$USER "$APP_HOME/logs" 2>/dev/null
 
-    cd "$APP_HOME" || exit 1
-    
-    # Export all configuration variables for Spring Boot to read from environment
-    # This avoids exposing sensitive data in process list (ps aux)
-    export SPRING_PROFILES_ACTIVE="${SPRING_PROFILE:-prod}"
+    # Create wrapper script that sources env and runs Java
+    # All configuration is passed via environment variables (NOT visible in ps aux)
+    WRAPPER="$APP_HOME/.squish_start_$$.sh"
+    cat > "$WRAPPER" << 'EOFSCRIPT'
+#!/bin/sh
+cd /opt/squish
 
-    # Database
-    [ -n "$DB_URL" ] && export DB_URL
-    [ -n "$DB_USER" ] && export DB_USER
-    [ -n "$DB_PASSWORD" ] && export DB_PASSWORD
+# Source environment file - all variables must have 'export' keyword
+. ./config/squish.env
 
-    # Compression
-    [ -n "$COMPRESSION_MODE" ] && export COMPRESSION_MODE
-    [ -n "$DRY_RUN" ] && export DRY_RUN
+# Verify critical variables are set
+if [ -z "$DB_URL" ]; then
+    echo "ERROR: DB_URL not set in squish.env"
+    exit 1
+fi
 
-    # Pipeline
-    [ -n "$WORKER_THREADS" ] && export WORKER_THREADS
-    [ -n "$ID_FROM" ] && export ID_FROM
-    [ -n "$ID_TO" ] && export ID_TO
+if [ -z "$JAVA_HOME" ]; then
+    echo "ERROR: JAVA_HOME not set in squish.env"
+    exit 1
+fi
 
-    # Query Configuration
-    [ -n "$MASTER_TABLE" ] && export MASTER_TABLE
-    [ -n "$DETAIL_TABLE" ] && export DETAIL_TABLE
-    [ -n "$TRACKING_TABLE" ] && export TRACKING_TABLE
-    [ -n "$ID_COLUMN" ] && export ID_COLUMN
-    [ -n "$FILENAME_COLUMN" ] && export FILENAME_COLUMN
-    [ -n "$DETAIL_ID_COLUMN" ] && export DETAIL_ID_COLUMN
-    [ -n "$DATA_COLUMN" ] && export DATA_COLUMN
-    [ -n "$MASTER_TABLE_FILTER" ] && export MASTER_TABLE_FILTER
+if [ ! -x "$JAVA_HOME/bin/java" ]; then
+    echo "ERROR: Java not found at $JAVA_HOME/bin/java"
+    exit 1
+fi
 
-    # Watchdog
-    [ -n "$WATCHDOG_ENABLED" ] && export WATCHDOG_ENABLED
-    [ -n "$WATCHDOG_INTERVAL" ] && export WATCHDOG_INTERVAL
+# Generate runtime config file from environment variables
+# This file is readable only by the squish user and deleted on exit
+CONFIG_FILE="./config/.runtime-$$.yml"
+trap "rm -f $CONFIG_FILE" EXIT
 
-    # Report
-    [ -n "$REPORT_ENABLED" ] && export REPORT_ENABLED
-    [ -n "$REPORT_DIRECTORY" ] && export REPORT_DIRECTORY
+cat > "$CONFIG_FILE" << EOFCONFIG
+# Auto-generated from squish.env - DO NOT EDIT
+compressor:
+  mode: ${COMPRESSION_MODE:-AGGRESSIVE}
+  dry-run: ${DRY_RUN:-false}
+  database:
+    jdbc-url: ${DB_URL}
+    username: ${DB_USER}
+    password: ${DB_PASSWORD}
+  query:
+    master-table: ${MASTER_TABLE:-OTTICA}
+    detail-table: ${DETAIL_TABLE:-OTTICAI}
+    tracking-table: ${TRACKING_TABLE:-SQUISH_PROCESSED}
+    id-column: ${ID_COLUMN:-OTT_ID}
+    filename-column: ${FILENAME_COLUMN:-OTT_NOME_FILE}
+    detail-id-column: ${DETAIL_ID_COLUMN:-OTTI_ID}
+    data-column: ${DATA_COLUMN:-OTTI_DATA}
+    master-table-filter: "${MASTER_TABLE_FILTER:-}"
+  pipeline:
+    worker-threads: ${WORKER_THREADS:-16}
+    id-from: ${ID_FROM:-0}
+    id-to: ${ID_TO:-0}
+  http:
+    port: ${HTTP_PORT:-8080}
+    ssl-enabled: ${HTTP_SSL_ENABLED:-false}
+    keystore-path: ${HTTP_KEYSTORE_PATH:-}
+    keystore-password: ${HTTP_KEYSTORE_PASSWORD:-}
+    keystore-type: ${HTTP_KEYSTORE_TYPE:-PKCS12}
+    ssl-protocol: ${HTTP_SSL_PROTOCOL:-TLSv1.3}
+  watchdog:
+    enabled: ${WATCHDOG_ENABLED:-false}
+    poll-interval-seconds: ${WATCHDOG_INTERVAL:-300}
+  report:
+    enabled: ${REPORT_ENABLED:-true}
+    directory: ${REPORT_DIRECTORY:-reports}
+  email:
+    enabled: ${EMAIL_ENABLED:-false}
+    smtp-host: ${SMTP_HOST:-}
+    smtp-port: ${SMTP_PORT:-587}
+    smtp-user: ${SMTP_USER:-}
+    smtp-password: ${SMTP_PASSWORD:-}
+    ssl: ${SMTP_SSL:-false}
+    starttls: ${SMTP_STARTTLS:-true}
+    ssl-protocols: ${SMTP_SSL_PROTOCOLS:-TLSv1.2,TLSv1.3}
+    from: ${SMTP_FROM:-}
+    to:
+      - ${SMTP_TO:-}
+EOFCONFIG
 
-    # Email
-    [ -n "$EMAIL_ENABLED" ] && export EMAIL_ENABLED
-    [ -n "$SMTP_HOST" ] && export SMTP_HOST
-    [ -n "$SMTP_PORT" ] && export SMTP_PORT
-    [ -n "$SMTP_USER" ] && export SMTP_USER
-    [ -n "$SMTP_PASSWORD" ] && export SMTP_PASSWORD
-    [ -n "$SMTP_SSL" ] && export SMTP_SSL
-    [ -n "$SMTP_STARTTLS" ] && export SMTP_STARTTLS
-    [ -n "$SMTP_SSL_PROTOCOLS" ] && export SMTP_SSL_PROTOCOLS
-    [ -n "$SMTP_FROM" ] && export SMTP_FROM
-    [ -n "$SMTP_TO" ] && export SMTP_TO
+chmod 600 "$CONFIG_FILE"
 
-    # HTTP/HTTPS
-    [ -n "$HTTP_PORT" ] && export HTTP_PORT
-    [ -n "$HTTP_SSL_ENABLED" ] && export HTTP_SSL_ENABLED
-    [ -n "$HTTP_KEYSTORE_PATH" ] && export HTTP_KEYSTORE_PATH
-    [ -n "$HTTP_KEYSTORE_PASSWORD" ] && export HTTP_KEYSTORE_PASSWORD
-    [ -n "$HTTP_KEYSTORE_TYPE" ] && export HTTP_KEYSTORE_TYPE
-    [ -n "$HTTP_SSL_PROTOCOL" ] && export HTTP_SSL_PROTOCOL
-
-    echo "Starting $DESC with profile: $SPRING_PROFILES_ACTIVE"
-
-    # Write environment to temp file for su to source (with export statements)
-    ENV_FILE="$APP_HOME/.squish_env_$$"
-    : > "$ENV_FILE"
-    chmod 600 "$ENV_FILE"
-
-    # Export each variable properly quoted (escape single quotes)
-    for var in SPRING_PROFILES_ACTIVE DB_URL DB_USER DB_PASSWORD \
-               COMPRESSION_MODE DRY_RUN WORKER_THREADS ID_FROM ID_TO \
-               MASTER_TABLE DETAIL_TABLE TRACKING_TABLE ID_COLUMN \
-               FILENAME_COLUMN DETAIL_ID_COLUMN DATA_COLUMN MASTER_TABLE_FILTER \
-               WATCHDOG_ENABLED WATCHDOG_INTERVAL REPORT_ENABLED REPORT_DIRECTORY \
-               EMAIL_ENABLED SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASSWORD \
-               SMTP_SSL SMTP_STARTTLS SMTP_SSL_PROTOCOLS SMTP_FROM SMTP_TO \
-               HTTP_PORT HTTP_SSL_ENABLED HTTP_KEYSTORE_PATH HTTP_KEYSTORE_PASSWORD \
-               HTTP_KEYSTORE_TYPE HTTP_SSL_PROTOCOL JAVA_HOME JAVA_OPTS; do
-        eval "val=\"\$$var\""
-        if [ -n "$val" ]; then
-            # Escape single quotes: ' -> '\''
-            escaped_val=$(printf '%s' "$val" | sed "s/'/'\\\\''/g")
-            printf "export %s='%s'\n" "$var" "$escaped_val" >> "$ENV_FILE"
-        fi
-    done
+# Run Java with runtime config - credentials NOT visible in ps aux
+exec $JAVA_HOME/bin/java $JAVA_OPTS \
+    --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
+    -Dspring.profiles.active=${SPRING_PROFILES_ACTIVE:-prod} \
+    -Dspring.config.additional-location=file:$CONFIG_FILE \
+    -jar /opt/squish/squish.jar
+EOFSCRIPT
+    chmod 755 "$WRAPPER"
+    if [ -n "$USER" ]; then
+        chown "$USER:$USER" "$WRAPPER"
+    fi
 
     if [ -n "$USER" ]; then
-        su -s /bin/sh "$USER" -c ". $ENV_FILE && nohup $JAVA $JAVA_OPTS -jar $JAR_FILE >> $LOG_FILE 2>&1 & echo \$! > $PID_FILE"
+        su -s /bin/sh "$USER" -c "nohup $WRAPPER >> $LOG_FILE 2>&1 & echo \$! > $PID_FILE"
     else
-        . "$ENV_FILE"
-        nohup $JAVA $JAVA_OPTS -jar $JAR_FILE >> $LOG_FILE 2>&1 &
+        nohup "$WRAPPER" >> $LOG_FILE 2>&1 &
         echo $! > "$PID_FILE"
     fi
 
-    rm -f "$ENV_FILE"
+    # Clean up wrapper after a delay (process has started)
+    ( sleep 5 && rm -f "$WRAPPER" ) &
     
     sleep 3
     
