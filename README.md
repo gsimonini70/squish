@@ -14,13 +14,16 @@
 
 - **High Performance** - Virtual Threads (Project Loom) for massive I/O concurrency
 - **Configurable Compression** - Three modes: LOSSLESS, MEDIUM, AGGRESSIVE
-- **Real-time Dashboard** - Beautiful glassmorphism UI with live metrics
+- **Real-time Dashboard** - Beautiful glassmorphism UI with live metrics (HTTP/HTTPS)
 - **System Monitoring** - CPU, Memory, Thread usage gauges
 - **Activity Tracking** - Real-time log of processed PDFs with filenames
 - **Batch & Watchdog Modes** - One-time processing or continuous monitoring
-- **Email Notifications** - Automatic reports on completion
+- **Email Notifications** - Automatic reports with secure SMTP (STARTTLS/SSL)
 - **Dry-Run Mode** - Test without modifying database
-- **PDF Validation** - Automatically skips non-PDF attachments
+- **PDF Validation** - Automatically skips non-PDF attachments (magic bytes check)
+- **Processing Tracking** - Tracks all processed records to avoid re-processing
+- **Flexible Query Filter** - Generic WHERE clause for complex record selection
+- **Configurable Schema** - Adaptable table/column names for any schema
 
 ---
 
@@ -95,6 +98,22 @@ compressor:
     password: pass
     max-pool-size: 12
 
+  # Query Configuration - table/column mapping
+  query:
+    master-table: OTTICA              # Main table with PDF metadata
+    detail-table: OTTICAI             # Detail table with PDF BLOB data
+    tracking-table: SQUISH_PROCESSED  # Tracking table (created by DDL)
+    id-column: OTT_ID                 # Primary key column
+    filename-column: OTT_NOME_FILE    # Filename column
+    detail-id-column: OTTI_ID         # Detail table join column
+    data-column: OTTI_DATA            # BLOB column with PDF data
+    # Generic WHERE filter - supports any valid SQL condition
+    master-table-filter: "OTT_TIPO_DOC = '001030'"
+    # Examples:
+    # master-table-filter: "OTT_TIPO_DOC IN ('001030','001031')"
+    # master-table-filter: "OTT_TIPO_DOC = '001030' AND OTT_STATUS = 'A'"
+    # master-table-filter: "CREATED_DATE > DATE '2024-01-01'"
+
   pipeline:
     worker-threads: 8      # Number of compression workers
     id-from: 0             # Starting record ID
@@ -116,6 +135,11 @@ compressor:
   watchdog:
     enabled: false         # Enable continuous monitoring
     poll-interval-seconds: 60
+
+  # Report generation
+  report:
+    enabled: true          # Enable/disable PDF reports
+    directory: reports     # Output directory (relative or absolute)
 
   # Email notifications with secure protocols
   email:
@@ -188,6 +212,45 @@ Squish uses a multi-stage pipeline architecture optimized for I/O-bound operatio
 | **LOSSLESS** | 100% | 100% | Archival, legal documents |
 | **MEDIUM** | 85% | 80% | General office documents |
 | **AGGRESSIVE** | 70% | 60% | Maximum storage savings |
+
+---
+
+## 🗃️ Database Setup
+
+Before first run, create the tracking table to avoid re-processing records:
+
+```sql
+-- Run the DDL script (Oracle 11g+ compatible)
+@sql/create_tracking_table.sql
+```
+
+The tracking table stores processing history:
+
+| Column | Description |
+|--------|-------------|
+| `OTT_ID` | Reference to source record |
+| `ORIGINAL_SIZE` | Original file size in bytes |
+| `COMPRESSED_SIZE` | Compressed size (NULL for skipped/error) |
+| `SAVINGS_PERCENT` | Compression savings percentage |
+| `STATUS` | `SUCCESS`, `SKIPPED`, or `ERROR` |
+| `ERROR_MESSAGE` | Error/skip reason |
+| `PROCESSED_DATE` | Processing timestamp |
+| `HOSTNAME` | Processing server hostname |
+
+### Processing Status
+
+| Status | Description |
+|--------|-------------|
+| `SUCCESS` | PDF compressed successfully |
+| `SKIPPED` | Not a PDF file (failed magic bytes check `%PDF-`) |
+| `ERROR` | Compression failed (corrupt PDF, etc.) |
+
+### Statistics View
+
+```sql
+-- Check compression statistics by status
+SELECT * FROM SQUISH_STATS;
+```
 
 ---
 

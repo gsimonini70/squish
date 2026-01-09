@@ -30,7 +30,11 @@ All configuration is done via YAML files in `src/main/resources/`:
 - `application.yml` - Base configuration
 - `application-dev.yml` - Development profile
 - `application-test.yml` - Test profile
-- `application-prod.yml` - Production profile
+- `application-prod.yml` - Production profile (reads from environment variables)
+
+### Production Deployment
+
+In production, all configuration is passed via **environment variables** for security. Credentials are NOT exposed in process listings (`ps aux`). See `dist/config/squish.env.template`.
 
 ### Key Configuration Options
 
@@ -44,6 +48,19 @@ compressor:
     username: user
     password: pass
     max-pool-size: 12
+
+  query:
+    master-table: OTTICA              # Main table with PDF metadata
+    detail-table: OTTICAI             # Detail table with PDF data
+    tracking-table: SQUISH_PROCESSED  # Tracking table for processed records
+    id-column: OTT_ID                 # Primary key column
+    filename-column: OTT_NOME_FILE    # Filename column
+    detail-id-column: OTTI_ID         # Detail table ID column
+    data-column: OTTI_DATA            # BLOB column with PDF data
+    # Generic WHERE filter (examples below)
+    master-table-filter: "OTT_TIPO_DOC = '001030'"
+    # master-table-filter: "OTT_TIPO_DOC IN ('001030','001031') AND OTT_STATUS = 'A'"
+    # master-table-filter: "OTT_TIPO_DOC = '001030' AND CREATED_DATE > DATE '2024-01-01'"
 
   pipeline:
     worker-threads: 8
@@ -65,6 +82,10 @@ compressor:
   watchdog:
     enabled: false
     poll-interval-seconds: 60
+
+  report:
+    enabled: true          # Enable/disable PDF reports
+    directory: reports     # Output directory for reports
 
   email:
     enabled: false
@@ -101,6 +122,35 @@ Writer Pool (Virtual Threads + Semaphore)
 - `http/` - MonitorServer (Glassmorphism dashboard)
 - `report/` - ReportGenerator (PDF reports)
 - `email/` - EmailService (SMTP notifications)
+
+## Database Setup
+
+Before first run, create the tracking table:
+
+```bash
+sqlplus user/pass@db @dist/sql/create_tracking_table.sql
+```
+
+### Tracking Table (SQUISH_PROCESSED)
+
+| Column | Description |
+|--------|-------------|
+| `OTT_ID` | Reference to source record (unique) |
+| `ORIGINAL_SIZE` | Original file size in bytes |
+| `COMPRESSED_SIZE` | Compressed size (NULL for skipped/error) |
+| `STATUS` | `SUCCESS`, `SKIPPED`, or `ERROR` |
+| `ERROR_MESSAGE` | Error/skip reason |
+| `PROCESSED_DATE` | Processing timestamp |
+| `HOSTNAME` | Server hostname |
+
+### PDF Validation
+
+Files are validated before compression using magic bytes check (`%PDF-`):
+- `SUCCESS` - Valid PDF, compressed successfully
+- `SKIPPED` - Not a PDF file (e.g., images, Word docs)
+- `ERROR` - Compression failed (corrupt, encrypted, etc.)
+
+All statuses are tracked in `SQUISH_PROCESSED` to avoid re-processing.
 
 ## Operating Modes
 

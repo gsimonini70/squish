@@ -19,18 +19,22 @@ sudo chown $USER:$USER /opt/squish
 cp squish.jar /opt/squish/
 cp -r bin/ /opt/squish/
 cp -r config/ /opt/squish/
+cp -r sql/ /opt/squish/
 mkdir -p /opt/squish/logs
 
-# 3. Configure
+# 3. Create tracking table in Oracle
+sqlplus user/pass@db @/opt/squish/sql/create_tracking_table.sql
+
+# 4. Configure
 cp /opt/squish/config/squish.env.template /opt/squish/config/squish.env
 chmod 600 /opt/squish/config/squish.env
 # Edit squish.env with your database credentials
 
-# 4. Start
+# 5. Start
 cd /opt/squish
 ./bin/squish.sh start
 
-# 5. Check status
+# 6. Check status
 ./bin/squish.sh status
 # Dashboard: http://localhost:8080/
 ```
@@ -161,7 +165,67 @@ docker-compose up -d
 
 ---
 
+## Database Setup
+
+Before running Squish, create the tracking table to avoid re-processing records:
+
+### Create Tracking Table
+
+```bash
+# Using SQL*Plus
+sqlplus user/pass@service @sql/create_tracking_table.sql
+
+# Or copy/paste the DDL manually
+```
+
+The tracking table DDL is Oracle 11g+ compatible (uses sequence + trigger for auto-increment).
+
+### Tracking Table Structure
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `ID` | NUMBER | Auto-increment primary key |
+| `OTT_ID` | NUMBER | Reference to source record (unique) |
+| `ORIGINAL_SIZE` | NUMBER | Original file size in bytes |
+| `COMPRESSED_SIZE` | NUMBER | Compressed size (NULL for skipped/error) |
+| `SAVINGS_PERCENT` | NUMBER(5,2) | Compression savings percentage |
+| `STATUS` | VARCHAR2(20) | `SUCCESS`, `SKIPPED`, or `ERROR` |
+| `ERROR_MESSAGE` | VARCHAR2(500) | Error/skip reason |
+| `PROCESSED_DATE` | TIMESTAMP | Processing timestamp |
+| `HOSTNAME` | VARCHAR2(100) | Server that processed the record |
+
+### Processing Status Values
+
+| Status | Description |
+|--------|-------------|
+| `SUCCESS` | PDF compressed successfully |
+| `SKIPPED` | Not a PDF file (failed `%PDF-` magic bytes check) |
+| `ERROR` | Compression failed (corrupt PDF, encrypted, etc.) |
+
+### Statistics View
+
+A convenience view is created for aggregate statistics:
+
+```sql
+SELECT * FROM SQUISH_STATS;
+-- STATUS | RECORD_COUNT | ORIGINAL_MB | COMPRESSED_MB | AVG_SAVINGS_PCT | FIRST_PROCESSED | LAST_PROCESSED
+```
+
+---
+
 ## Configuration
+
+### Security Note
+
+All configuration parameters are passed to Squish via **environment variables** (not command-line arguments). This ensures that sensitive data like database credentials and passwords are not visible in:
+- Process listings (`ps aux`)
+- System logs
+- Shell history
+
+The `squish.env` file should have restricted permissions:
+```bash
+chmod 600 /opt/squish/config/squish.env
+```
 
 ### Environment Variables
 
@@ -171,7 +235,23 @@ docker-compose up -d
 | `DB_URL` | Oracle JDBC URL | - |
 | `DB_USER` | Database username | - |
 | `DB_PASSWORD` | Database password | - |
+| **Query Configuration** | | |
+| `MASTER_TABLE` | Main table with PDF metadata | `OTTICA` |
+| `DETAIL_TABLE` | Detail table with PDF BLOB | `OTTICAI` |
+| `TRACKING_TABLE` | Table for tracking processed records | `SQUISH_PROCESSED` |
+| `ID_COLUMN` | Primary key column name | `OTT_ID` |
+| `FILENAME_COLUMN` | Filename column name | `OTT_NOME_FILE` |
+| `DETAIL_ID_COLUMN` | Detail table join column | `OTTI_ID` |
+| `DATA_COLUMN` | BLOB column with PDF data | `OTTI_DATA` |
+| `MASTER_TABLE_FILTER` | WHERE clause filter (see examples below) | `OTT_TIPO_DOC = '001030'` |
+| **Pipeline** | | |
+| `COMPRESSION_MODE` | Compression level | `AGGRESSIVE` |
+| `DRY_RUN` | Test mode (no DB writes) | `false` |
+| `WORKER_THREADS` | Number of workers | `16` |
+| `ID_FROM` | Starting record ID | `0` |
+| `ID_TO` | Ending record ID (0=no limit) | `0` |
 | **SMTP Email** | | |
+| `EMAIL_ENABLED` | Enable email notifications | `false` |
 | `SMTP_HOST` | SMTP server hostname | - |
 | `SMTP_PORT` | SMTP port (587=STARTTLS, 465=SSL) | `587` |
 | `SMTP_USER` | SMTP username | - |
@@ -188,9 +268,42 @@ docker-compose up -d
 | `HTTP_KEYSTORE_PASSWORD` | Keystore password | - |
 | `HTTP_KEYSTORE_TYPE` | Keystore type | `PKCS12` |
 | `HTTP_SSL_PROTOCOL` | TLS protocol version | `TLSv1.3` |
+| **Watchdog** | | |
+| `WATCHDOG_ENABLED` | Enable continuous monitoring | `false` |
+| `WATCHDOG_INTERVAL` | Poll interval in seconds | `300` |
+| **Report** | | |
+| `REPORT_ENABLED` | Enable PDF report generation | `true` |
+| `REPORT_DIRECTORY` | Output directory for reports | `reports` |
 | **General** | | |
+| `JAVA_HOME` | Path to Java 22+ installation | - |
 | `JAVA_OPTS` | JVM options | `-Xms256m -Xmx2g` |
 | `SPRING_PROFILES_ACTIVE` | Config profile | `prod` |
+
+### Master Table Filter Examples
+
+The `MASTER_TABLE_FILTER` variable accepts any valid SQL WHERE clause fragment. Complex filters with `=`, `AND`, quotes, and special characters are fully supported via environment variables.
+
+```bash
+# Single value filter
+MASTER_TABLE_FILTER="OTT_TIPO_DOC = '001030'"
+
+# Multiple values with IN
+MASTER_TABLE_FILTER="OTT_TIPO_DOC IN ('001030','001031','001032')"
+
+# Combined conditions
+MASTER_TABLE_FILTER="OTT_TIPO_DOC = '001030' AND OTT_STATUS = 'A'"
+
+# Date filter (Oracle DATE literal)
+MASTER_TABLE_FILTER="OTT_TIPO_DOC = '001030' AND CREATED_DATE > DATE '2024-01-01'"
+
+# Numeric date column (YYYYMMDD format)
+MASTER_TABLE_FILTER="OTT_TIPO_DOC = '001030' AND OTT_DATA_INS BETWEEN 20120101 AND 20121231"
+
+# Complex filter with ROWNUM limit
+MASTER_TABLE_FILTER="OTT_TIPO_DOC IN ('001030','001031') AND OTT_STATUS = 'A' AND ROWNUM <= 10000"
+```
+
+> **Note**: For DATE columns, use Oracle date literals (`DATE '2024-01-01'`) or `TO_DATE()` function. For NUMBER columns storing dates as YYYYMMDD, use numeric values directly.
 
 ### Compression Modes
 

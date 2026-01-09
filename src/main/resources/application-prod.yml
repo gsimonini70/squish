@@ -12,6 +12,18 @@ compressor:
     password: ${DB_PASSWORD:password}
     max-pool-size: 16
 
+  # Query Configuration - table/column names
+  query:
+    master-table: ${MASTER_TABLE:OTTICA}
+    detail-table: ${DETAIL_TABLE:OTTICAI}
+    tracking-table: ${TRACKING_TABLE:SQUISH_PROCESSED}
+    id-column: ${ID_COLUMN:OTT_ID}
+    filename-column: ${FILENAME_COLUMN:OTT_NOME_FILE}
+    detail-id-column: ${DETAIL_ID_COLUMN:OTTI_ID}
+    data-column: ${DATA_COLUMN:OTTI_DATA}
+    # Generic WHERE clause filter (e.g. "COL = 'val' AND COL2 IN ('a','b')")
+    master-table-filter: ${MASTER_TABLE_FILTER:OTT_TIPO_DOC = '001030'}
+
   pipeline:
     worker-threads: ${WORKER_THREADS:16}
     id-from: ${ID_FROM:0}
@@ -29,6 +41,11 @@ compressor:
   watchdog:
     enabled: ${WATCHDOG_ENABLED:true}
     poll-interval-seconds: ${WATCHDOG_INTERVAL:300}
+
+  # Report Configuration
+  report:
+    enabled: ${REPORT_ENABLED:true}
+    directory: ${REPORT_DIRECTORY:reports}
 
   # Email with secure protocols
   email:

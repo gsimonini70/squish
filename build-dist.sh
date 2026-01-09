@@ -20,7 +20,7 @@ mvn clean package -DskipTests -q
 # Create distribution directory
 echo "Creating distribution..."
 rm -rf "target/${DIST_NAME}"
-mkdir -p "target/${DIST_NAME}"/{bin,config,docs,logs,service}
+mkdir -p "target/${DIST_NAME}"/{bin,config,docs,logs,service,sql}
 
 # Copy files
 cp target/pdf-compressor-modern-*.jar "target/${DIST_NAME}/squish.jar"
@@ -28,6 +28,7 @@ cp dist/bin/* "target/${DIST_NAME}/bin/"
 cp dist/config/* "target/${DIST_NAME}/config/"
 cp dist/docs/* "target/${DIST_NAME}/docs/"
 cp dist/service/* "target/${DIST_NAME}/service/"
+cp dist/sql/* "target/${DIST_NAME}/sql/"
 cp README.md "target/${DIST_NAME}/"
 cp Dockerfile "target/${DIST_NAME}/"
 cp docker-compose.yml "target/${DIST_NAME}/"

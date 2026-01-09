@@ -18,10 +18,12 @@ public class PdfCompressorProperties {
     private boolean dryRun = false;
 
     private final Database database = new Database();
+    private final Query query = new Query();
     private final Pipeline pipeline = new Pipeline();
     private final Http http = new Http();
     private final Watchdog watchdog = new Watchdog();
     private final Email email = new Email();
+    private final Report report = new Report();
 
     // Getters and setters
     public CompressionMode getMode() { return mode; }
@@ -31,10 +33,12 @@ public class PdfCompressorProperties {
     public void setDryRun(boolean dryRun) { this.dryRun = dryRun; }
 
     public Database getDatabase() { return database; }
+    public Query getQuery() { return query; }
     public Pipeline getPipeline() { return pipeline; }
     public Http getHttp() { return http; }
     public Watchdog getWatchdog() { return watchdog; }
     public Email getEmail() { return email; }
+    public Report getReport() { return report; }
 
     /**
      * Database configuration.
@@ -56,6 +60,52 @@ public class PdfCompressorProperties {
 
         public int getMaxPoolSize() { return maxPoolSize; }
         public void setMaxPoolSize(int maxPoolSize) { this.maxPoolSize = maxPoolSize; }
+    }
+
+    /**
+     * Query configuration - table/column names and filters.
+     */
+    public static class Query {
+        // Table names
+        private String masterTable = "OTTICA";
+        private String detailTable = "OTTICAI";
+        private String trackingTable = "SQUISH_PROCESSED";
+
+        // Column names - master table
+        private String idColumn = "OTT_ID";
+        private String filenameColumn = "OTT_NOME_FILE";
+
+        // Column names - detail table
+        private String detailIdColumn = "OTTI_ID";
+        private String dataColumn = "OTTI_DATA";
+
+        // Generic filter condition for master table (WHERE clause fragment)
+        // Examples: "OTT_TIPO_DOC = '001030'" or "OTT_TIPO_DOC IN ('001030','001031') AND OTT_STATUS = 'A'"
+        private String masterTableFilter = "OTT_TIPO_DOC = '001030'";
+
+        public String getMasterTable() { return masterTable; }
+        public void setMasterTable(String masterTable) { this.masterTable = masterTable; }
+
+        public String getDetailTable() { return detailTable; }
+        public void setDetailTable(String detailTable) { this.detailTable = detailTable; }
+
+        public String getTrackingTable() { return trackingTable; }
+        public void setTrackingTable(String trackingTable) { this.trackingTable = trackingTable; }
+
+        public String getIdColumn() { return idColumn; }
+        public void setIdColumn(String idColumn) { this.idColumn = idColumn; }
+
+        public String getFilenameColumn() { return filenameColumn; }
+        public void setFilenameColumn(String filenameColumn) { this.filenameColumn = filenameColumn; }
+
+        public String getDetailIdColumn() { return detailIdColumn; }
+        public void setDetailIdColumn(String detailIdColumn) { this.detailIdColumn = detailIdColumn; }
+
+        public String getDataColumn() { return dataColumn; }
+        public void setDataColumn(String dataColumn) { this.dataColumn = dataColumn; }
+
+        public String getMasterTableFilter() { return masterTableFilter; }
+        public void setMasterTableFilter(String masterTableFilter) { this.masterTableFilter = masterTableFilter; }
     }
 
     /**
@@ -200,5 +250,19 @@ public class PdfCompressorProperties {
 
         public String getSslProtocol() { return sslProtocol; }
         public void setSslProtocol(String sslProtocol) { this.sslProtocol = sslProtocol; }
+    }
+
+    /**
+     * Report generation configuration.
+     */
+    public static class Report {
+        private String directory = "reports";
+        private boolean enabled = true;
+
+        public String getDirectory() { return directory; }
+        public void setDirectory(String directory) { this.directory = directory; }
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
     }
 }

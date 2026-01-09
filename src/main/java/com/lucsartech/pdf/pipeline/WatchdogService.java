@@ -105,16 +105,27 @@ public final class WatchdogService implements AutoCloseable {
      */
     public void calculateInitialStats() {
         var pipeline = properties.getPipeline();
+        var q = properties.getQuery();
         long startId = pipeline.getIdFrom();
-        String sql = """
-            SELECT COUNT(*) AS cnt, NVL(SUM(DBMS_LOB.GETLENGTH(OTTI_DATA)), 0) AS total_size
-            FROM OTTICA
-            INNER JOIN OTTICAI ON OTT_ID = OTTI_ID
-            WHERE OTT_TIPO_DOC = '001030'
-              AND OTTI_DATA IS NOT NULL
-              AND OTT_ID >= ?
-              AND NOT EXISTS (SELECT 1 FROM SQUISH_PROCESSED SP WHERE SP.OTT_ID = OTTICA.OTT_ID)
-            """ + (pipeline.hasUpperBound() ? " AND OTT_ID <= ?" : "");
+        String sql = String.format("""
+            SELECT COUNT(*) AS cnt, NVL(SUM(DBMS_LOB.GETLENGTH(%s)), 0) AS total_size
+            FROM %s
+            INNER JOIN %s ON %s = %s
+            WHERE (%s)
+              AND %s IS NOT NULL
+              AND %s >= ?
+              AND NOT EXISTS (SELECT 1 FROM %s SP WHERE SP.OTT_ID = %s.%s)
+            """,
+            q.getDataColumn(),
+            q.getMasterTable(),
+            q.getDetailTable(), q.getIdColumn(), q.getDetailIdColumn(),
+            q.getMasterTableFilter(),
+            q.getDataColumn(),
+            q.getIdColumn(),
+            q.getTrackingTable(), q.getMasterTable(), q.getIdColumn()
+        ) + (pipeline.hasUpperBound() ? String.format(" AND %s <= ?", q.getIdColumn()) : "");
+
+        log.debug("Initial stats SQL: {}", sql);
 
         try (Connection conn = dataSource.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -134,7 +145,8 @@ public final class WatchdogService implements AutoCloseable {
                 }
             }
         } catch (Exception e) {
-            log.warn("Failed to calculate initial stats", e);
+            log.error("Failed to calculate initial stats. Filter: [{}], SQL: {}",
+                    q.getMasterTableFilter(), sql, e);
         }
     }
 
@@ -232,18 +244,28 @@ public final class WatchdogService implements AutoCloseable {
      */
     private int processNewRecords() {
         var pipeline = properties.getPipeline();
+        var q = properties.getQuery();
         long startId = Math.max(lastProcessedId.get(), pipeline.getIdFrom());
 
         // Query for new records (excluding already processed, respecting ID range)
-        String sql = """
-            SELECT OTT_ID, OTT_NOME_FILE, OTTI_DATA
-            FROM OTTICA
-            INNER JOIN OTTICAI ON OTT_ID = OTTI_ID
-            WHERE OTT_TIPO_DOC = '001030'
-              AND OTTI_DATA IS NOT NULL
-              AND OTT_ID >= ?
-              AND NOT EXISTS (SELECT 1 FROM SQUISH_PROCESSED SP WHERE SP.OTT_ID = OTTICA.OTT_ID)
-            """ + (pipeline.hasUpperBound() ? " AND OTT_ID <= ?" : "") + " ORDER BY OTT_ID";
+        String sql = String.format("""
+            SELECT %s, %s, %s
+            FROM %s
+            INNER JOIN %s ON %s = %s
+            WHERE (%s)
+              AND %s IS NOT NULL
+              AND %s >= ?
+              AND NOT EXISTS (SELECT 1 FROM %s SP WHERE SP.OTT_ID = %s.%s)
+            """,
+            q.getIdColumn(), q.getFilenameColumn(), q.getDataColumn(),
+            q.getMasterTable(),
+            q.getDetailTable(), q.getIdColumn(), q.getDetailIdColumn(),
+            q.getMasterTableFilter(),
+            q.getDataColumn(),
+            q.getIdColumn(),
+            q.getTrackingTable(), q.getMasterTable(), q.getIdColumn()
+        ) + (pipeline.hasUpperBound() ? String.format(" AND %s <= ?", q.getIdColumn()) : "")
+          + String.format(" ORDER BY %s", q.getIdColumn());
 
         int processedCount = 0;
         BlockingQueue<CompletableFuture<Void>> futures = new LinkedBlockingQueue<>();
@@ -260,9 +282,9 @@ public final class WatchdogService implements AutoCloseable {
 
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
-                    long id = rs.getLong("OTT_ID");
-                    String filename = rs.getString("OTT_NOME_FILE");
-                    byte[] pdfData = rs.getBinaryStream("OTTI_DATA").readAllBytes();
+                    long id = rs.getLong(q.getIdColumn());
+                    String filename = rs.getString(q.getFilenameColumn());
+                    byte[] pdfData = rs.getBinaryStream(q.getDataColumn()).readAllBytes();
 
                     tracker.recordRead();
 
@@ -323,18 +345,34 @@ public final class WatchdogService implements AutoCloseable {
                         id, success.originalSize(), success.compressedSize());
             }
             tracker.recordUpdate();
+        } else if (result instanceof CompressionResult.Skipped skipped) {
+            // Track skipped files to avoid re-processing
+            if (!properties.isDryRun()) {
+                trackSkipped(skipped);
+            } else {
+                log.debug("DRY-RUN: would track skipped ID {} ({})", id, skipped.reason());
+            }
+        } else if (result instanceof CompressionResult.Failure failure) {
+            // Track failed files to avoid re-processing
+            if (!properties.isDryRun()) {
+                trackFailure(failure);
+            } else {
+                log.debug("DRY-RUN: would track failed ID {} ({})", id, failure.errorMessage());
+            }
         }
     }
 
     /**
-     * Update the database with compressed data and track in SQUISH_PROCESSED.
+     * Update the database with compressed data and track in tracking table.
      */
     private void updateDatabase(CompressionResult.Success result) {
-        String updateSql = "UPDATE OTTICAI SET OTTI_DATA = ? WHERE OTTI_ID = ?";
-        String trackingSql = """
-            INSERT INTO SQUISH_PROCESSED (OTT_ID, ORIGINAL_SIZE, COMPRESSED_SIZE, SAVINGS_PERCENT, STATUS, HOSTNAME)
+        var q = properties.getQuery();
+        String updateSql = String.format("UPDATE %s SET %s = ? WHERE %s = ?",
+                q.getDetailTable(), q.getDataColumn(), q.getDetailIdColumn());
+        String trackingSql = String.format("""
+            INSERT INTO %s (OTT_ID, ORIGINAL_SIZE, COMPRESSED_SIZE, SAVINGS_PERCENT, STATUS, HOSTNAME)
             VALUES (?, ?, ?, ?, 'SUCCESS', ?)
-            """;
+            """, q.getTrackingTable());
 
         try (Connection conn = dataSource.getConnection();
              PreparedStatement updatePs = conn.prepareStatement(updateSql);
@@ -362,6 +400,59 @@ public final class WatchdogService implements AutoCloseable {
             log.error("Failed to update ID {}", result.id(), e);
             tracker.recordError(result.id(), e);
         }
+    }
+
+    /**
+     * Track a skipped (non-PDF) record in the tracking table.
+     */
+    private void trackSkipped(CompressionResult.Skipped result) {
+        var q = properties.getQuery();
+        String trackingSql = String.format("""
+            INSERT INTO %s (OTT_ID, ORIGINAL_SIZE, STATUS, ERROR_MESSAGE, HOSTNAME)
+            VALUES (?, ?, 'SKIPPED', ?, ?)
+            """, q.getTrackingTable());
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(trackingSql)) {
+
+            ps.setLong(1, result.id());
+            ps.setLong(2, result.size());
+            ps.setString(3, result.reason());
+            ps.setString(4, getHostname());
+            ps.executeUpdate();
+            conn.commit();
+
+        } catch (Exception e) {
+            log.error("Failed to track skipped ID {}", result.id(), e);
+        }
+    }
+
+    /**
+     * Track a failed record in the tracking table.
+     */
+    private void trackFailure(CompressionResult.Failure result) {
+        var q = properties.getQuery();
+        String trackingSql = String.format("""
+            INSERT INTO %s (OTT_ID, ORIGINAL_SIZE, STATUS, ERROR_MESSAGE, HOSTNAME)
+            VALUES (?, 0, 'ERROR', ?, ?)
+            """, q.getTrackingTable());
+
+        try (Connection conn = dataSource.getConnection();
+             PreparedStatement ps = conn.prepareStatement(trackingSql)) {
+
+            ps.setLong(1, result.id());
+            ps.setString(2, truncate(result.errorMessage(), 500));
+            ps.setString(3, getHostname());
+            ps.executeUpdate();
+            conn.commit();
+
+        } catch (Exception e) {
+            log.error("Failed to track error ID {}", result.id(), e);
+        }
+    }
+
+    private String truncate(String s, int maxLen) {
+        return s != null && s.length() > maxLen ? s.substring(0, maxLen) : s;
     }
 
     private String getHostname() {

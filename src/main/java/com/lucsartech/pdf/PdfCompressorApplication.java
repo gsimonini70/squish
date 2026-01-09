@@ -1,6 +1,7 @@
 package com.lucsartech.pdf;
 
 import com.lucsartech.pdf.config.PdfCompressorProperties;
+import com.lucsartech.pdf.email.EmailService;
 import com.lucsartech.pdf.http.MonitorServer;
 import com.lucsartech.pdf.pipeline.CompressionPipeline;
 import com.lucsartech.pdf.pipeline.ProgressTracker;
@@ -8,12 +9,14 @@ import com.lucsartech.pdf.pipeline.WatchdogService;
 import com.lucsartech.pdf.report.ReportGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 
+import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 
 /**
@@ -56,6 +59,9 @@ public class PdfCompressorApplication implements CommandLineRunner {
     private final MonitorServer monitorServer;
     private final CompressionPipeline pipeline;
     private final WatchdogService watchdogService;
+
+    @Autowired(required = false)
+    private EmailService emailService;
 
     public PdfCompressorApplication(
             PdfCompressorProperties properties,
@@ -116,7 +122,24 @@ public class PdfCompressorApplication implements CommandLineRunner {
             // Generate report
             log.info("Generating PDF report...");
             var reportPath = ReportGenerator.generate(tracker, properties, "compression_report");
-            log.info("Report saved to: {}", reportPath.toAbsolutePath());
+            if (reportPath != null) {
+                log.info("Report saved to: {}", reportPath.toAbsolutePath());
+            }
+
+            // Send email notification if configured
+            if (emailService != null) {
+                var snapshot = tracker.snapshot();
+                emailService.sendBatchReport(
+                        (int) snapshot.updated(),
+                        snapshot.originalBytes() / 1024.0 / 1024.0,
+                        snapshot.compressedBytes() / 1024.0 / 1024.0,
+                        snapshot.savingsPercent(),
+                        (int) snapshot.errors(),
+                        snapshot.elapsedSeconds(),
+                        reportPath,
+                        properties.isDryRun()
+                );
+            }
 
             // Print summary
             printSummary();
@@ -168,7 +191,9 @@ public class PdfCompressorApplication implements CommandLineRunner {
             // Generate final report
             log.info("Generating final report...");
             var reportPath = ReportGenerator.generate(tracker, properties, "watchdog_report");
-            log.info("Report saved to: {}", reportPath.toAbsolutePath());
+            if (reportPath != null) {
+                log.info("Report saved to: {}", reportPath.toAbsolutePath());
+            }
 
             printWatchdogSummary();
 

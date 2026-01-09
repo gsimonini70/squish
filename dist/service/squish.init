@@ -84,43 +84,96 @@ start() {
 
     cd "$APP_HOME" || exit 1
     
-    # Build Spring Boot arguments from environment variables
-    SPRING_ARGS="--spring.profiles.active=$SPRING_PROFILE"
+    # Export all configuration variables for Spring Boot to read from environment
+    # This avoids exposing sensitive data in process list (ps aux)
+    export SPRING_PROFILES_ACTIVE="${SPRING_PROFILE:-prod}"
 
     # Database
-    [ -n "$DB_URL" ] && SPRING_ARGS="$SPRING_ARGS --compressor.database.jdbc-url=$DB_URL"
-    [ -n "$DB_USER" ] && SPRING_ARGS="$SPRING_ARGS --compressor.database.username=$DB_USER"
-    [ -n "$DB_PASSWORD" ] && SPRING_ARGS="$SPRING_ARGS --compressor.database.password=$DB_PASSWORD"
+    [ -n "$DB_URL" ] && export DB_URL
+    [ -n "$DB_USER" ] && export DB_USER
+    [ -n "$DB_PASSWORD" ] && export DB_PASSWORD
 
     # Compression
-    [ -n "$COMPRESSION_MODE" ] && SPRING_ARGS="$SPRING_ARGS --compressor.mode=$COMPRESSION_MODE"
-    [ -n "$DRY_RUN" ] && SPRING_ARGS="$SPRING_ARGS --compressor.dry-run=$DRY_RUN"
+    [ -n "$COMPRESSION_MODE" ] && export COMPRESSION_MODE
+    [ -n "$DRY_RUN" ] && export DRY_RUN
 
     # Pipeline
-    [ -n "$WORKER_THREADS" ] && SPRING_ARGS="$SPRING_ARGS --compressor.pipeline.worker-threads=$WORKER_THREADS"
-    [ -n "$ID_FROM" ] && SPRING_ARGS="$SPRING_ARGS --compressor.pipeline.id-from=$ID_FROM"
-    [ -n "$ID_TO" ] && SPRING_ARGS="$SPRING_ARGS --compressor.pipeline.id-to=$ID_TO"
+    [ -n "$WORKER_THREADS" ] && export WORKER_THREADS
+    [ -n "$ID_FROM" ] && export ID_FROM
+    [ -n "$ID_TO" ] && export ID_TO
+
+    # Query Configuration
+    [ -n "$MASTER_TABLE" ] && export MASTER_TABLE
+    [ -n "$DETAIL_TABLE" ] && export DETAIL_TABLE
+    [ -n "$TRACKING_TABLE" ] && export TRACKING_TABLE
+    [ -n "$ID_COLUMN" ] && export ID_COLUMN
+    [ -n "$FILENAME_COLUMN" ] && export FILENAME_COLUMN
+    [ -n "$DETAIL_ID_COLUMN" ] && export DETAIL_ID_COLUMN
+    [ -n "$DATA_COLUMN" ] && export DATA_COLUMN
+    [ -n "$MASTER_TABLE_FILTER" ] && export MASTER_TABLE_FILTER
 
     # Watchdog
-    [ -n "$WATCHDOG_ENABLED" ] && SPRING_ARGS="$SPRING_ARGS --compressor.watchdog.enabled=$WATCHDOG_ENABLED"
-    [ -n "$WATCHDOG_INTERVAL" ] && SPRING_ARGS="$SPRING_ARGS --compressor.watchdog.poll-interval-seconds=$WATCHDOG_INTERVAL"
+    [ -n "$WATCHDOG_ENABLED" ] && export WATCHDOG_ENABLED
+    [ -n "$WATCHDOG_INTERVAL" ] && export WATCHDOG_INTERVAL
+
+    # Report
+    [ -n "$REPORT_ENABLED" ] && export REPORT_ENABLED
+    [ -n "$REPORT_DIRECTORY" ] && export REPORT_DIRECTORY
 
     # Email
-    [ -n "$EMAIL_ENABLED" ] && SPRING_ARGS="$SPRING_ARGS --compressor.email.enabled=$EMAIL_ENABLED"
-    [ -n "$SMTP_HOST" ] && SPRING_ARGS="$SPRING_ARGS --compressor.email.smtp-host=$SMTP_HOST"
-    [ -n "$SMTP_PORT" ] && SPRING_ARGS="$SPRING_ARGS --compressor.email.smtp-port=$SMTP_PORT"
+    [ -n "$EMAIL_ENABLED" ] && export EMAIL_ENABLED
+    [ -n "$SMTP_HOST" ] && export SMTP_HOST
+    [ -n "$SMTP_PORT" ] && export SMTP_PORT
+    [ -n "$SMTP_USER" ] && export SMTP_USER
+    [ -n "$SMTP_PASSWORD" ] && export SMTP_PASSWORD
+    [ -n "$SMTP_SSL" ] && export SMTP_SSL
+    [ -n "$SMTP_STARTTLS" ] && export SMTP_STARTTLS
+    [ -n "$SMTP_SSL_PROTOCOLS" ] && export SMTP_SSL_PROTOCOLS
+    [ -n "$SMTP_FROM" ] && export SMTP_FROM
+    [ -n "$SMTP_TO" ] && export SMTP_TO
 
-    # HTTP
-    [ -n "$HTTP_PORT" ] && SPRING_ARGS="$SPRING_ARGS --compressor.http.port=$HTTP_PORT"
+    # HTTP/HTTPS
+    [ -n "$HTTP_PORT" ] && export HTTP_PORT
+    [ -n "$HTTP_SSL_ENABLED" ] && export HTTP_SSL_ENABLED
+    [ -n "$HTTP_KEYSTORE_PATH" ] && export HTTP_KEYSTORE_PATH
+    [ -n "$HTTP_KEYSTORE_PASSWORD" ] && export HTTP_KEYSTORE_PASSWORD
+    [ -n "$HTTP_KEYSTORE_TYPE" ] && export HTTP_KEYSTORE_TYPE
+    [ -n "$HTTP_SSL_PROTOCOL" ] && export HTTP_SSL_PROTOCOL
 
-    echo "Starting with: $JAVA $JAVA_OPTS -jar $JAR_FILE $SPRING_ARGS"
+    echo "Starting $DESC with profile: $SPRING_PROFILES_ACTIVE"
+
+    # Write environment to temp file for su to source (with export statements)
+    ENV_FILE="$APP_HOME/.squish_env_$$"
+    : > "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+
+    # Export each variable properly quoted (escape single quotes)
+    for var in SPRING_PROFILES_ACTIVE DB_URL DB_USER DB_PASSWORD \
+               COMPRESSION_MODE DRY_RUN WORKER_THREADS ID_FROM ID_TO \
+               MASTER_TABLE DETAIL_TABLE TRACKING_TABLE ID_COLUMN \
+               FILENAME_COLUMN DETAIL_ID_COLUMN DATA_COLUMN MASTER_TABLE_FILTER \
+               WATCHDOG_ENABLED WATCHDOG_INTERVAL REPORT_ENABLED REPORT_DIRECTORY \
+               EMAIL_ENABLED SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASSWORD \
+               SMTP_SSL SMTP_STARTTLS SMTP_SSL_PROTOCOLS SMTP_FROM SMTP_TO \
+               HTTP_PORT HTTP_SSL_ENABLED HTTP_KEYSTORE_PATH HTTP_KEYSTORE_PASSWORD \
+               HTTP_KEYSTORE_TYPE HTTP_SSL_PROTOCOL JAVA_HOME JAVA_OPTS; do
+        eval "val=\"\$$var\""
+        if [ -n "$val" ]; then
+            # Escape single quotes: ' -> '\''
+            escaped_val=$(printf '%s' "$val" | sed "s/'/'\\\\''/g")
+            printf "export %s='%s'\n" "$var" "$escaped_val" >> "$ENV_FILE"
+        fi
+    done
 
     if [ -n "$USER" ]; then
-        su -s /bin/sh "$USER" -c "nohup $JAVA $JAVA_OPTS -jar $JAR_FILE $SPRING_ARGS >> $LOG_FILE 2>&1 & echo \$! > $PID_FILE"
+        su -s /bin/sh "$USER" -c ". $ENV_FILE && nohup $JAVA $JAVA_OPTS -jar $JAR_FILE >> $LOG_FILE 2>&1 & echo \$! > $PID_FILE"
     else
-        nohup $JAVA $JAVA_OPTS -jar $JAR_FILE $SPRING_ARGS >> $LOG_FILE 2>&1 &
+        . "$ENV_FILE"
+        nohup $JAVA $JAVA_OPTS -jar $JAR_FILE >> $LOG_FILE 2>&1 &
         echo $! > "$PID_FILE"
     fi
+
+    rm -f "$ENV_FILE"
     
     sleep 3
     

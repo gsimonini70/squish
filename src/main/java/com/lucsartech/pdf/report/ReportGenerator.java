@@ -20,6 +20,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -51,8 +53,23 @@ public final class ReportGenerator {
      * Generate a PDF report of the compression run.
      */
     public static Path generate(ProgressTracker tracker, PdfCompressorProperties properties, String baseName) {
+        // Check if reports are enabled
+        if (!properties.getReport().isEnabled()) {
+            log.debug("Report generation is disabled");
+            return null;
+        }
+
+        // Create report directory if it doesn't exist
+        Path reportDir = Path.of(properties.getReport().getDirectory());
+        try {
+            Files.createDirectories(reportDir);
+        } catch (IOException e) {
+            log.error("Failed to create report directory: {}", reportDir, e);
+            return null;
+        }
+
         String filename = baseName + "_" + System.currentTimeMillis() + ".pdf";
-        Path outputPath = Path.of(filename);
+        Path outputPath = reportDir.resolve(filename);
 
         try (var writer = new PdfWriter(new FileOutputStream(outputPath.toFile()));
              var pdf = new PdfDocument(writer);
