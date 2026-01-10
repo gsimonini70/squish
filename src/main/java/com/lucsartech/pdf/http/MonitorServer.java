@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.lucsartech.pdf.config.CompressionMode;
 import com.lucsartech.pdf.config.PdfCompressorProperties;
+import com.lucsartech.pdf.metrics.SquishMetrics;
 import com.lucsartech.pdf.pipeline.ProgressTracker;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -126,6 +127,23 @@ public final class MonitorServer implements AutoCloseable {
         httpServer.createContext("/", this::handleDashboard);
         httpServer.createContext("/api/status", this::handleStatus);
         httpServer.createContext("/api/health", this::handleHealth);
+        httpServer.createContext("/metrics", this::handleMetrics);
+    }
+
+    /**
+     * Prometheus metrics endpoint.
+     * Returns metrics in Prometheus text format for scraping.
+     */
+    private void handleMetrics(HttpExchange exchange) throws IOException {
+        String metrics = SquishMetrics.getInstance().scrape();
+        byte[] bytes = metrics.getBytes(StandardCharsets.UTF_8);
+
+        exchange.getResponseHeaders().add("Content-Type", "text/plain; version=0.0.4; charset=utf-8");
+        exchange.sendResponseHeaders(200, bytes.length);
+
+        try (OutputStream os = exchange.getResponseBody()) {
+            os.write(bytes);
+        }
     }
 
     private void handleStatus(HttpExchange exchange) throws IOException {
@@ -796,7 +814,7 @@ public final class MonitorServer implements AutoCloseable {
 
                     <!-- Footer -->
                     <div class="footer">
-                        <div>Squish v2.0 | Auto-refresh 2s | API: <code>/api/status</code> | Built with Virtual Threads</div>
+                        <div>Squish v3.0 | Auto-refresh 2s | API: <code>/api/status</code> | Prometheus: <code>/metrics</code> | Built with Virtual Threads</div>
                         <div style="margin-top: 0.5rem; opacity: 0.7;">Designed & Engineered by <strong>Lucsartech Srl</strong></div>
                     </div>
                 </div>

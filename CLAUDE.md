@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Modern PDF compression pipeline (v2.0) that reads PDFs from Oracle Database, compresses them with configurable quality levels, and writes compressed versions back. Uses **Java 22** with **Virtual Threads** (Project Loom) for high-performance I/O. Built with **Spring Boot 3.2** for configuration management.
+Modern PDF compression pipeline (v3.0) that reads PDFs from Oracle Database, compresses them with configurable quality levels, and writes compressed versions back. Uses **Java 22** with **Virtual Threads** (Project Loom) for high-performance I/O. Built with **Spring Boot 3.2** for configuration management. Includes **Prometheus metrics** for enterprise monitoring.
 
 ## Build & Run
 
@@ -166,11 +166,26 @@ Set `compressor.watchdog.enabled=true` to enable continuous monitoring. Polls da
 - Dashboard: `http://localhost:8080/`
 - JSON API: `http://localhost:8080/api/status`
 - Health: `http://localhost:8080/api/health`
+- Prometheus: `http://localhost:8080/metrics`
+
+### Prometheus Metrics
+
+Key metrics exposed:
+- `squish_records_read_total` - Records read from DB
+- `squish_records_compressed_total` - PDFs compressed
+- `squish_records_skipped_total` - Non-PDF files skipped
+- `squish_records_failed_total` - Compression failures
+- `squish_bytes_original_total` - Original bytes processed
+- `squish_bytes_compressed_total` - Compressed bytes output
+- `squish_compression_ratio` - Current ratio (compressed/original)
+- `squish_savings_percent` - Current savings percentage
+- `squish_compression_duration` - Compression time histogram
 
 ## Key Dependencies
 
 - **Spring Boot 3.2** - Application framework
 - **iText 8** - PDF manipulation
+- **Micrometer + Prometheus** - Metrics and monitoring
 - **TwelveMonkeys ImageIO** - Image encoding
 - **HikariCP** - Connection pooling
 - **SLF4J + Logback** - Structured logging

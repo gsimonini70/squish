@@ -1,6 +1,7 @@
 package com.lucsartech.pdf.pipeline;
 
 import com.lucsartech.pdf.compression.CompressionResult;
+import com.lucsartech.pdf.metrics.SquishMetrics;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -82,9 +83,13 @@ public final class ProgressTracker {
 
     public void recordRead() {
         readCount.increment();
+        // Prometheus metrics
+        SquishMetrics.getInstance().recordRead();
     }
 
     public void recordResult(CompressionResult result) {
+        var metrics = SquishMetrics.getInstance();
+
         switch (result) {
             case CompressionResult.Success success -> {
                 compressedCount.increment();
@@ -93,16 +98,23 @@ public final class ProgressTracker {
                 totalProcessingTimeMs.add(success.processingTime().toMillis());
                 addActivity(ActivityEntry.compressed(success.id(), success.filename(), success.originalSize(),
                         success.compressedSize(), success.processingTime().toMillis()));
+                // Prometheus metrics
+                metrics.recordCompressed(success.originalSize(), success.compressedSize(),
+                        success.processingTime().toMillis());
             }
             case CompressionResult.Skipped skipped -> {
                 skippedCount.increment();
                 skippedBytes.add(skipped.size());
                 addActivity(ActivityEntry.skipped(skipped.id(), skipped.filename(), skipped.size()));
+                // Prometheus metrics
+                metrics.recordSkipped();
             }
             case CompressionResult.Failure failure -> {
                 errorCount.increment();
                 failedRecords.add(FailedRecord.of(failure.id(), failure.errorMessage()));
                 addActivity(ActivityEntry.failed(failure.id(), failure.filename()));
+                // Prometheus metrics
+                metrics.recordFailed();
             }
         }
     }

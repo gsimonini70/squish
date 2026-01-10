@@ -13,11 +13,11 @@
 
     <groupId>com.lucsartech</groupId>
     <artifactId>pdf-compressor-modern</artifactId>
-    <version>2.0.0</version>
+    <version>3.0.0</version>
     <packaging>jar</packaging>
 
-    <name>PDF Compressor Modern</name>
-    <description>Modern PDF compression pipeline with Spring Boot and Virtual Threads</description>
+    <name>Squish PDF Compression Engine</name>
+    <description>High-performance PDF compression pipeline with Virtual Threads and Prometheus metrics</description>
 
     <properties>
         <java.version>22</java.version>
@@ -87,6 +87,16 @@
             <groupId>com.sun.mail</groupId>
             <artifactId>jakarta.mail</artifactId>
             <version>2.0.1</version>
+        </dependency>
+
+        <!-- Metrics - Micrometer with Prometheus -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
     </dependencies>
 

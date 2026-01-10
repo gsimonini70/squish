@@ -2,6 +2,7 @@
 
 [![Java](https://img.shields.io/badge/Java-22+-orange.svg)](https://openjdk.org/projects/jdk/22/)
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Prometheus](https://img.shields.io/badge/Prometheus-Metrics-red.svg)](https://prometheus.io/)
 [![License](https://img.shields.io/badge/License-Proprietary-blue.svg)]()
 
 **Squish** is a high-performance PDF compression pipeline designed for enterprise workloads. Built with Java 22 Virtual Threads and Spring Boot 3.2, it efficiently processes large volumes of PDFs stored in Oracle Database.
@@ -262,6 +263,59 @@ SELECT * FROM SQUISH_STATS;
 | `GET /` | Dashboard UI |
 | `GET /api/status` | JSON status with all metrics |
 | `GET /api/health` | Health check endpoint |
+| `GET /metrics` | Prometheus metrics (text format) |
+
+---
+
+## 📊 Prometheus Monitoring
+
+Squish 3.0 exports metrics in Prometheus format at `/metrics` endpoint.
+
+### Available Metrics
+
+| Metric | Type | Description |
+|--------|------|-------------|
+| `squish_records_read_total` | Counter | Total records read from database |
+| `squish_records_compressed_total` | Counter | Total PDFs successfully compressed |
+| `squish_records_skipped_total` | Counter | Total records skipped (non-PDF) |
+| `squish_records_failed_total` | Counter | Total compression failures |
+| `squish_bytes_original_total` | Counter | Total original bytes processed |
+| `squish_bytes_compressed_total` | Counter | Total compressed bytes produced |
+| `squish_compression_ratio` | Gauge | Current compression ratio |
+| `squish_savings_percent` | Gauge | Current savings percentage |
+| `squish_queue_size` | Gauge | Compression queue size |
+| `squish_active_workers` | Gauge | Active compression workers |
+| `squish_watchdog_cycle` | Gauge | Current watchdog cycle |
+| `squish_compression_duration` | Timer | Compression time histogram |
+| `squish_jvm_cpu_usage` | Gauge | JVM CPU usage % |
+| `squish_jvm_memory_used_bytes` | Gauge | JVM heap memory used |
+| `squish_jvm_threads_active` | Gauge | Active JVM threads |
+
+### Prometheus Configuration
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: 'squish'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['squish-server:8080']
+```
+
+### Grafana Dashboard
+
+Import the Squish dashboard or create custom panels:
+
+```promql
+# Compression rate
+rate(squish_records_compressed_total[5m])
+
+# Savings percentage
+squish_savings_percent
+
+# Throughput MB/s
+rate(squish_bytes_original_total[1m]) / 1024 / 1024
+```
 
 ### Example API Response
 
@@ -353,6 +407,7 @@ compressor:
 | Spring Boot | 3.2.x | Application framework |
 | iText | 8.x | PDF manipulation |
 | HikariCP | 5.x | Connection pooling |
+| Micrometer | 1.12.x | Prometheus metrics |
 | TwelveMonkeys | 3.x | Image I/O support |
 | Gson | 2.x | JSON serialization |
 | Jakarta Mail | 2.x | Email notifications |
