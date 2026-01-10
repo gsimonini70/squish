@@ -248,8 +248,9 @@ public final class WatchdogService implements AutoCloseable {
         long startId = Math.max(lastProcessedId.get(), pipeline.getIdFrom());
 
         // Query for new records (excluding already processed, respecting ID range)
+        // Include CTR column for composite PK (OTTI_ID, OTTI_CTR)
         String sql = String.format("""
-            SELECT %s, %s, %s
+            SELECT %s, %s, %s, %s
             FROM %s
             INNER JOIN %s ON %s = %s
             WHERE (%s)
@@ -257,7 +258,7 @@ public final class WatchdogService implements AutoCloseable {
               AND %s >= ?
               AND NOT EXISTS (SELECT 1 FROM %s SP WHERE SP.OTT_ID = %s.%s)
             """,
-            q.getIdColumn(), q.getFilenameColumn(), q.getDataColumn(),
+            q.getIdColumn(), q.getDetailCtrColumn(), q.getFilenameColumn(), q.getDataColumn(),
             q.getMasterTable(),
             q.getDetailTable(), q.getIdColumn(), q.getDetailIdColumn(),
             q.getMasterTableFilter(),
@@ -283,17 +284,19 @@ public final class WatchdogService implements AutoCloseable {
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     long id = rs.getLong(q.getIdColumn());
+                    long ctr = rs.getLong(q.getDetailCtrColumn());
                     String filename = rs.getString(q.getFilenameColumn());
                     byte[] pdfData = rs.getBinaryStream(q.getDataColumn()).readAllBytes();
 
                     tracker.recordRead();
 
-                    // Process asynchronously
+                    // Process asynchronously (capture ctr for composite PK)
+                    final long recordCtr = ctr;
                     CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                         try {
                             workerSemaphore.acquire();
                             try {
-                                processRecord(id, filename, pdfData);
+                                processRecord(id, recordCtr, filename, pdfData);
                             } finally {
                                 workerSemaphore.release();
                             }
@@ -329,8 +332,8 @@ public final class WatchdogService implements AutoCloseable {
     /**
      * Process a single record.
      */
-    private void processRecord(long id, String filename, byte[] pdfData) {
-        CompressionResult result = compressor.compress(id, filename, pdfData);
+    private void processRecord(long id, long ctr, String filename, byte[] pdfData) {
+        CompressionResult result = compressor.compress(id, ctr, filename, pdfData);
         tracker.recordResult(result);
 
         if (result instanceof CompressionResult.Success success) {
@@ -367,8 +370,9 @@ public final class WatchdogService implements AutoCloseable {
      */
     private void updateDatabase(CompressionResult.Success result) {
         var q = properties.getQuery();
-        String updateSql = String.format("UPDATE %s SET %s = ? WHERE %s = ?",
-                q.getDetailTable(), q.getDataColumn(), q.getDetailIdColumn());
+        // Use composite PK (OTTI_ID, OTTI_CTR) for update
+        String updateSql = String.format("UPDATE %s SET %s = ? WHERE %s = ? AND %s = ?",
+                q.getDetailTable(), q.getDataColumn(), q.getDetailIdColumn(), q.getDetailCtrColumn());
         // Use MERGE to handle duplicate records (upsert)
         String trackingSql = String.format("""
             MERGE INTO %s T
@@ -386,11 +390,12 @@ public final class WatchdogService implements AutoCloseable {
              PreparedStatement updatePs = conn.prepareStatement(updateSql);
              PreparedStatement trackingPs = conn.prepareStatement(trackingSql)) {
 
-            // Update compressed data
+            // Update compressed data (WHERE OTTI_ID = ? AND OTTI_CTR = ?)
             updatePs.setBinaryStream(1,
                     new ByteArrayInputStream(result.compressedData()),
                     result.compressedData().length);
             updatePs.setLong(2, result.id());
+            updatePs.setLong(3, result.ctr());
             updatePs.executeUpdate();
 
             // Track in SQUISH_PROCESSED (upsert)

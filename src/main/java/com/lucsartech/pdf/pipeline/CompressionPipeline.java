@@ -190,7 +190,7 @@ public final class CompressionPipeline implements AutoCloseable {
 
         // Signal writers to stop and wait
         for (int i = 0; i < properties.getPipeline().getWorkerThreads(); i++) {
-            resultQueue.put(new CompressionResult.Success(-1, null, new byte[0], 0, 0, java.time.Duration.ZERO));
+            resultQueue.put(new CompressionResult.Success(-1, 0, null, new byte[0], 0, 0, java.time.Duration.ZERO));
         }
         writersFuture.get();
         log.info("Writers completed");
@@ -202,8 +202,9 @@ public final class CompressionPipeline implements AutoCloseable {
     private Void runProducer() {
         var pipeline = properties.getPipeline();
         var q = properties.getQuery();
+        // Include CTR column for composite PK (OTTI_ID, OTTI_CTR)
         String sql = String.format("""
-            SELECT %s, %s, %s
+            SELECT %s, %s, %s, %s
             FROM %s
             INNER JOIN %s ON %s = %s
             WHERE (%s)
@@ -211,7 +212,7 @@ public final class CompressionPipeline implements AutoCloseable {
               AND %s >= ?
               AND NOT EXISTS (SELECT 1 FROM %s SP WHERE SP.OTT_ID = %s.%s)
             """,
-            q.getIdColumn(), q.getFilenameColumn(), q.getDataColumn(),
+            q.getIdColumn(), q.getDetailCtrColumn(), q.getFilenameColumn(), q.getDataColumn(),
             q.getMasterTable(),
             q.getDetailTable(), q.getIdColumn(), q.getDetailIdColumn(),
             q.getMasterTableFilter(),
@@ -233,11 +234,12 @@ public final class CompressionPipeline implements AutoCloseable {
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {
                     long id = rs.getLong(q.getIdColumn());
+                    long ctr = rs.getLong(q.getDetailCtrColumn());
                     String filename = rs.getString(q.getFilenameColumn());
                     byte[] pdf = rs.getBinaryStream(q.getDataColumn()).readAllBytes();
 
                     tracker.recordRead();
-                    taskQueue.put(new PdfTask.Data(id, filename, pdf));
+                    taskQueue.put(new PdfTask.Data(id, ctr, filename, pdf));
                 }
             }
 
@@ -297,7 +299,7 @@ public final class CompressionPipeline implements AutoCloseable {
                     try {
                         log.trace("[{}] Compressing id={} ({})", threadName, data.id(), data.filename());
 
-                        CompressionResult result = compressor.compress(data.id(), data.filename(), data.pdf());
+                        CompressionResult result = compressor.compress(data.id(), data.ctr(), data.filename(), data.pdf());
                         tracker.recordResult(result);
 
                         if (result instanceof CompressionResult.Success success) {
@@ -356,8 +358,8 @@ public final class CompressionPipeline implements AutoCloseable {
 
         var pipeline = properties.getPipeline();
         var q = properties.getQuery();
-        String updateSql = String.format("UPDATE %s SET %s = ? WHERE %s = ?",
-            q.getDetailTable(), q.getDataColumn(), q.getDetailIdColumn());
+        String updateSql = String.format("UPDATE %s SET %s = ? WHERE %s = ? AND %s = ?",
+            q.getDetailTable(), q.getDataColumn(), q.getDetailIdColumn(), q.getDetailCtrColumn());
         // Use MERGE to handle duplicate records (upsert)
         String trackingSql = String.format("""
             MERGE INTO %s T
@@ -392,10 +394,11 @@ public final class CompressionPipeline implements AutoCloseable {
                 try {
                     tracker.recordUpdate();
 
-                    // Update compressed data
+                    // Update compressed data (WHERE OTTI_ID = ? AND OTTI_CTR = ?)
                     updatePs.setBinaryStream(1, new ByteArrayInputStream(result.compressedData()),
                             result.compressedData().length);
                     updatePs.setLong(2, result.id());
+                    updatePs.setLong(3, result.ctr());
                     updatePs.addBatch();
 
                     // Track in SQUISH_PROCESSED

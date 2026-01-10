@@ -10,10 +10,12 @@ import java.util.Optional;
 public sealed interface CompressionResult {
 
     long id();
+    long ctr();  // Counter for composite PK (OTTI_ID, OTTI_CTR)
     String filename();
 
     record Success(
             long id,
+            long ctr,
             String filename,
             byte[] compressedData,
             long originalSize,
@@ -36,17 +38,18 @@ public sealed interface CompressionResult {
 
     record Failure(
             long id,
+            long ctr,
             String filename,
             String errorMessage,
             Optional<Throwable> cause
     ) implements CompressionResult {
 
-        public static Failure of(long id, String filename, Throwable cause) {
-            return new Failure(id, filename, cause.getMessage(), Optional.of(cause));
+        public static Failure of(long id, long ctr, String filename, Throwable cause) {
+            return new Failure(id, ctr, filename, cause.getMessage(), Optional.of(cause));
         }
 
-        public static Failure of(long id, String filename, String message) {
-            return new Failure(id, filename, message, Optional.empty());
+        public static Failure of(long id, long ctr, String filename, String message) {
+            return new Failure(id, ctr, filename, message, Optional.empty());
         }
     }
 
@@ -55,13 +58,14 @@ public sealed interface CompressionResult {
      */
     record Skipped(
             long id,
+            long ctr,
             String filename,
             long size,
             String reason
     ) implements CompressionResult {
 
-        public static Skipped notPdf(long id, String filename, long size) {
-            return new Skipped(id, filename, size, "Not a PDF file");
+        public static Skipped notPdf(long id, long ctr, String filename, long size) {
+            return new Skipped(id, ctr, filename, size, "Not a PDF file");
         }
     }
 

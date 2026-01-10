@@ -40,20 +40,21 @@ public final class PdfCompressor {
     /**
      * Compress a PDF document.
      *
-     * @param id       Document identifier for tracking
+     * @param id       Document identifier for tracking (OTTI_ID)
+     * @param ctr      Counter for composite PK (OTTI_CTR)
      * @param filename Original filename
      * @param input    PDF bytes to compress
      * @return CompressionResult indicating success, failure, or skipped
      */
-    public CompressionResult compress(long id, String filename, byte[] input) {
+    public CompressionResult compress(long id, long ctr, String filename, byte[] input) {
         Objects.requireNonNull(input, "Input bytes cannot be null");
 
         long originalSize = input.length;
 
         // Check if this is actually a PDF
         if (!isPdf(input)) {
-            log.debug("Skipped id={} ({}): not a PDF file ({} bytes)", id, filename, originalSize);
-            return CompressionResult.Skipped.notPdf(id, filename, originalSize);
+            log.debug("Skipped id={}/ctr={} ({}): not a PDF file ({} bytes)", id, ctr, filename, originalSize);
+            return CompressionResult.Skipped.notPdf(id, ctr, filename, originalSize);
         }
 
         var startTime = Instant.now();
@@ -62,12 +63,13 @@ public final class PdfCompressor {
             byte[] compressed = compressInternal(input);
             var duration = Duration.between(startTime, Instant.now());
 
-            log.debug("Compressed PDF id={} ({}) in {}ms: {} -> {} bytes ({}% saved)",
-                    id, filename, duration.toMillis(), originalSize, compressed.length,
+            log.debug("Compressed PDF id={}/ctr={} ({}) in {}ms: {} -> {} bytes ({}% saved)",
+                    id, ctr, filename, duration.toMillis(), originalSize, compressed.length,
                     String.format("%.1f", (1.0 - (double) compressed.length / originalSize) * 100));
 
             return new CompressionResult.Success(
                     id,
+                    ctr,
                     filename,
                     compressed,
                     originalSize,
@@ -75,8 +77,8 @@ public final class PdfCompressor {
                     duration
             );
         } catch (Exception e) {
-            log.warn("Failed to compress PDF id={} ({}): {}", id, filename, e.getMessage());
-            return CompressionResult.Failure.of(id, filename, e);
+            log.warn("Failed to compress PDF id={}/ctr={} ({}): {}", id, ctr, filename, e.getMessage());
+            return CompressionResult.Failure.of(id, ctr, filename, e);
         }
     }
 

@@ -75,8 +75,9 @@ public class PdfCompressorProperties {
         private String idColumn = "OTT_ID";
         private String filenameColumn = "OTT_NOME_FILE";
 
-        // Column names - detail table
+        // Column names - detail table (composite PK: detailIdColumn + detailCtrColumn)
         private String detailIdColumn = "OTTI_ID";
+        private String detailCtrColumn = "OTTI_CTR";
         private String dataColumn = "OTTI_DATA";
 
         // Generic filter condition for master table (WHERE clause fragment)
@@ -100,6 +101,9 @@ public class PdfCompressorProperties {
 
         public String getDetailIdColumn() { return detailIdColumn; }
         public void setDetailIdColumn(String detailIdColumn) { this.detailIdColumn = detailIdColumn; }
+
+        public String getDetailCtrColumn() { return detailCtrColumn; }
+        public void setDetailCtrColumn(String detailCtrColumn) { this.detailCtrColumn = detailCtrColumn; }
 
         public String getDataColumn() { return dataColumn; }
         public void setDataColumn(String dataColumn) { this.dataColumn = dataColumn; }

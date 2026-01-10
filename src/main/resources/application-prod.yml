@@ -20,6 +20,7 @@ compressor:
     id-column: ${ID_COLUMN:OTT_ID}
     filename-column: ${FILENAME_COLUMN:OTT_NOME_FILE}
     detail-id-column: ${DETAIL_ID_COLUMN:OTTI_ID}
+    detail-ctr-column: ${DETAIL_CTR_COLUMN:OTTI_CTR}
     data-column: ${DATA_COLUMN:OTTI_DATA}
     # Generic WHERE clause filter (e.g. "COL = 'val' AND COL2 IN ('a','b')")
     master-table-filter: ${MASTER_TABLE_FILTER:OTT_TIPO_DOC = '001030'}
