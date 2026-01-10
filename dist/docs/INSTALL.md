@@ -241,7 +241,8 @@ chmod 600 /opt/squish/config/squish.env
 | `TRACKING_TABLE` | Table for tracking processed records | `SQUISH_PROCESSED` |
 | `ID_COLUMN` | Primary key column name | `OTT_ID` |
 | `FILENAME_COLUMN` | Filename column name | `OTT_NOME_FILE` |
-| `DETAIL_ID_COLUMN` | Detail table join column | `OTTI_ID` |
+| `DETAIL_ID_COLUMN` | Detail table ID column (composite PK part 1) | `OTTI_ID` |
+| `DETAIL_CTR_COLUMN` | Detail table CTR column (composite PK part 2) | `OTTI_CTR` |
 | `DATA_COLUMN` | BLOB column with PDF data | `OTTI_DATA` |
 | `MASTER_TABLE_FILTER` | WHERE clause filter (see examples below) | `OTT_TIPO_DOC = '001030'` |
 | **Pipeline** | | |

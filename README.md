@@ -105,7 +105,8 @@ compressor:
     tracking-table: SQUISH_PROCESSED  # Tracking table (created by DDL)
     id-column: OTT_ID                 # Primary key column
     filename-column: OTT_NOME_FILE    # Filename column
-    detail-id-column: OTTI_ID         # Detail table join column
+    detail-id-column: OTTI_ID         # Detail table ID column (composite PK part 1)
+    detail-ctr-column: OTTI_CTR       # Detail table CTR column (composite PK part 2)
     data-column: OTTI_DATA            # BLOB column with PDF data
     # Generic WHERE filter - supports any valid SQL condition
     master-table-filter: "OTT_TIPO_DOC = '001030'"
