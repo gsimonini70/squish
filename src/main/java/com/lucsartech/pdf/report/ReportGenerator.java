@@ -75,7 +75,8 @@ public final class ReportGenerator {
              var pdf = new PdfDocument(writer);
              var doc = new Document(pdf, PageSize.A4)) {
 
-            doc.setMargins(40, 40, 40, 40);
+            // Compact margins to fit on one page
+            doc.setMargins(25, 30, 25, 30);
 
             addHeader(doc, properties);
             addExecutionSummary(doc, tracker, properties);
@@ -99,62 +100,50 @@ public final class ReportGenerator {
     }
 
     private static void addHeader(Document doc, PdfCompressorProperties properties) {
-        // Title
-        var title = new Paragraph("PDF Compression Report")
-                .setFontSize(28)
+        // Title with mode badge inline
+        var modeText = properties.isDryRun() ? "DRY-RUN" : properties.getMode().name();
+
+        var title = new Paragraph("Squish Report")
+                .setFontSize(22)
                 .setBold()
                 .setFontColor(DARK)
                 .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(5);
+                .setMarginBottom(3);
         doc.add(title);
 
-        // Subtitle
-        var subtitle = new Paragraph("Compression Pipeline Execution Summary")
-                .setFontSize(12)
-                .setFontColor(MUTED)
-                .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(25);
-        doc.add(subtitle);
-
-        // Mode badge
-        var modeText = properties.isDryRun() ? "DRY-RUN MODE" : properties.getMode().name() + " MODE";
+        // Mode badge - compact
         var modeColor = properties.isDryRun() ? WARNING : SUCCESS;
-
         var modeBadge = new Paragraph(modeText)
-                .setFontSize(10)
+                .setFontSize(9)
                 .setBold()
                 .setFontColor(ColorConstants.WHITE)
                 .setBackgroundColor(modeColor)
-                .setPadding(6)
-                .setPaddingLeft(16)
-                .setPaddingRight(16)
-                .setBorderRadius(new com.itextpdf.layout.properties.BorderRadius(20))
+                .setPadding(4)
+                .setPaddingLeft(12)
+                .setPaddingRight(12)
+                .setBorderRadius(new com.itextpdf.layout.properties.BorderRadius(12))
                 .setTextAlignment(TextAlignment.CENTER)
-                .setMarginBottom(20);
+                .setMarginBottom(12);
         doc.add(modeBadge);
     }
 
     private static void addExecutionSummary(Document doc, ProgressTracker tracker, PdfCompressorProperties properties) {
         addSectionTitle(doc, "Execution Details");
 
-        var table = new Table(UnitValue.createPercentArray(new float[]{1, 2}))
+        var table = new Table(UnitValue.createPercentArray(new float[]{1, 1.5f, 1, 1.5f}))
                 .useAllAvailableWidth()
-                .setMarginBottom(20);
+                .setMarginBottom(12);
 
         var pipeline = properties.getPipeline();
         String startStr = tracker.startTime() != null ? DTF.format(tracker.startTime()) : "N/A";
-        String endStr = tracker.endTime() != null ? DTF.format(tracker.endTime()) : "N/A";
-        String idRange = pipeline.getIdFrom() + " - " +
-                (pipeline.hasUpperBound() ? pipeline.getIdTo() : "END");
+        String idRange = pipeline.getIdFrom() + " - " + (pipeline.hasUpperBound() ? pipeline.getIdTo() : "END");
 
-        addInfoRow(table, "Compression Mode", properties.getMode().name());
-        addInfoRow(table, "Mode Description", properties.getMode().description());
-        addInfoRow(table, "Worker Threads", String.valueOf(pipeline.getWorkerThreads()));
+        addInfoRow(table, "Mode", properties.getMode().name());
+        addInfoRow(table, "Workers", String.valueOf(pipeline.getWorkerThreads()));
         addInfoRow(table, "ID Range", idRange);
-        addInfoRow(table, "Dry Run", properties.isDryRun() ? "Yes" : "No");
-        addInfoRow(table, "Start Time", startStr);
-        addInfoRow(table, "End Time", endStr);
         addInfoRow(table, "Duration", formatDuration(tracker.elapsedTime().toSeconds()));
+        addInfoRow(table, "Started", startStr);
+        addInfoRow(table, "Dry Run", properties.isDryRun() ? "Yes" : "No");
 
         doc.add(table);
     }
@@ -164,27 +153,30 @@ public final class ReportGenerator {
 
         var snapshot = tracker.snapshot();
         double initialDbMb = snapshot.initialDbSizeBytes() / 1024.0 / 1024.0;
-        double finalDbMb = snapshot.finalDbSizeBytes() / 1024.0 / 1024.0;
+        // Use currentDbSizeBytes (calculated) if finalDbSizeBytes is not set
+        double actualDbMb = snapshot.finalDbSizeBytes() > 0
+                ? snapshot.finalDbSizeBytes() / 1024.0 / 1024.0
+                : snapshot.currentDbSizeBytes() / 1024.0 / 1024.0;
         double originalMb = snapshot.originalBytes() / 1024.0 / 1024.0;
         double compressedMb = snapshot.compressedBytes() / 1024.0 / 1024.0;
 
         var table = new Table(UnitValue.createPercentArray(new float[]{2, 1, 1, 1}))
                 .useAllAvailableWidth()
-                .setMarginBottom(20);
+                .setMarginBottom(12);
 
         // Header
         addHeaderCell(table, "Metric");
         addHeaderCell(table, "Before");
         addHeaderCell(table, "After");
-        addHeaderCell(table, "Change");
+        addHeaderCell(table, "Savings");
 
         // Database Size
-        double savedMb = initialDbMb - finalDbMb;
+        double savedMb = initialDbMb - actualDbMb;
         double savedPct = initialDbMb > 0 ? (savedMb / initialDbMb) * 100 : 0;
 
         addDataCell(table, "Database Size");
         addDataCell(table, String.format("%.2f MB", initialDbMb));
-        addDataCell(table, String.format("%.2f MB", finalDbMb));
+        addDataCell(table, String.format("%.2f MB", actualDbMb));
         addDataCell(table, String.format("-%.2f MB (%.1f%%)", savedMb, savedPct), SUCCESS);
 
         // Processed Data
@@ -201,7 +193,7 @@ public final class ReportGenerator {
 
         var table = new Table(UnitValue.createPercentArray(new float[]{1, 1, 1, 1}))
                 .useAllAvailableWidth()
-                .setMarginBottom(20);
+                .setMarginBottom(12);
 
         var snapshot = tracker.snapshot();
 
@@ -217,15 +209,16 @@ public final class ReportGenerator {
     private static void addThroughputStats(Document doc, ProgressTracker tracker) {
         addSectionTitle(doc, "Throughput");
 
-        var table = new Table(UnitValue.createPercentArray(new float[]{1, 1, 1}))
+        var table = new Table(UnitValue.createPercentArray(new float[]{1, 1, 1, 1}))
                 .useAllAvailableWidth()
-                .setMarginBottom(20);
+                .setMarginBottom(12);
 
         var snapshot = tracker.snapshot();
 
-        addStatCard(table, "Records/second", String.format("%.2f", snapshot.recordsPerSecond()), PRIMARY);
-        addStatCard(table, "MB/second", String.format("%.2f", snapshot.mbPerSecond()), SECONDARY);
-        addStatCard(table, "Avg Processing Time", snapshot.avgProcessingTimeMs() + " ms", SUCCESS);
+        addStatCard(table, "Records/sec", String.format("%.2f", snapshot.recordsPerSecond()), PRIMARY);
+        addStatCard(table, "MB/sec", String.format("%.2f", snapshot.mbPerSecond()), SECONDARY);
+        addStatCard(table, "Avg Time", snapshot.avgProcessingTimeMs() + " ms", SUCCESS);
+        addStatCard(table, "Skipped", String.valueOf(snapshot.skipped()), MUTED);
 
         doc.add(table);
     }
@@ -236,35 +229,39 @@ public final class ReportGenerator {
         var failedIds = tracker.failedIds();
 
         var text = new StringBuilder();
-        for (int i = 0; i < failedIds.size(); i++) {
+        int maxShow = Math.min(failedIds.size(), 50); // Limit to 50 IDs to save space
+        for (int i = 0; i < maxShow; i++) {
             if (i > 0) text.append(", ");
-            if (i > 0 && i % 10 == 0) text.append("\n");
+            if (i > 0 && i % 15 == 0) text.append("\n");
             text.append(failedIds.get(i));
+        }
+        if (failedIds.size() > maxShow) {
+            text.append(" ... and ").append(failedIds.size() - maxShow).append(" more");
         }
 
         var para = new Paragraph(text.toString())
-                .setFontSize(9)
+                .setFontSize(8)
                 .setFontColor(MUTED)
                 .setBackgroundColor(new DeviceRgb(254, 242, 242))
-                .setPadding(12)
-                .setBorderRadius(new com.itextpdf.layout.properties.BorderRadius(8))
-                .setMarginBottom(20);
+                .setPadding(8)
+                .setBorderRadius(new com.itextpdf.layout.properties.BorderRadius(6))
+                .setMarginBottom(10);
         doc.add(para);
     }
 
     private static void addFooter(Document doc) {
-        var footer = new Paragraph("Generated by PDF Compressor Modern v2.0")
-                .setFontSize(9)
+        var footer = new Paragraph("Squish v2.0 | Built with Virtual Threads")
+                .setFontSize(8)
                 .setFontColor(MUTED)
                 .setTextAlignment(TextAlignment.CENTER)
-                .setMarginTop(30);
+                .setMarginTop(15);
         doc.add(footer);
 
-        var techInfo = new Paragraph("Powered by Spring Boot | Virtual Threads | iText 8 | Java 22")
-                .setFontSize(8)
+        var credits = new Paragraph("Designed & Engineered by Lucsartech Srl")
+                .setFontSize(7)
                 .setFontColor(new DeviceRgb(148, 163, 184))
                 .setTextAlignment(TextAlignment.CENTER);
-        doc.add(techInfo);
+        doc.add(credits);
     }
 
     // ========== Helper Methods ==========
@@ -275,35 +272,35 @@ public final class ReportGenerator {
 
     private static void addSectionTitle(Document doc, String title, DeviceRgb color) {
         var para = new Paragraph(title)
-                .setFontSize(14)
+                .setFontSize(11)
                 .setBold()
                 .setFontColor(color)
-                .setMarginTop(15)
-                .setMarginBottom(10);
+                .setMarginTop(8)
+                .setMarginBottom(6);
         doc.add(para);
     }
 
     private static void addInfoRow(Table table, String label, String value) {
         table.addCell(new Cell()
-                .add(new Paragraph(label).setFontSize(10).setBold().setFontColor(MUTED))
+                .add(new Paragraph(label).setFontSize(9).setBold().setFontColor(MUTED))
                 .setBackgroundColor(LIGHT)
                 .setBorder(Border.NO_BORDER)
                 .setBorderBottom(new SolidBorder(new DeviceRgb(226, 232, 240), 1))
-                .setPadding(10));
+                .setPadding(6));
 
         table.addCell(new Cell()
-                .add(new Paragraph(value).setFontSize(10).setFontColor(DARK))
+                .add(new Paragraph(value).setFontSize(9).setFontColor(DARK))
                 .setBorder(Border.NO_BORDER)
                 .setBorderBottom(new SolidBorder(new DeviceRgb(226, 232, 240), 1))
-                .setPadding(10));
+                .setPadding(6));
     }
 
     private static void addHeaderCell(Table table, String text) {
         table.addHeaderCell(new Cell()
-                .add(new Paragraph(text).setFontSize(10).setBold().setFontColor(ColorConstants.WHITE))
+                .add(new Paragraph(text).setFontSize(9).setBold().setFontColor(ColorConstants.WHITE))
                 .setBackgroundColor(DARK)
                 .setTextAlignment(TextAlignment.CENTER)
-                .setPadding(10));
+                .setPadding(6));
     }
 
     private static void addDataCell(Table table, String text) {
@@ -312,28 +309,28 @@ public final class ReportGenerator {
 
     private static void addDataCell(Table table, String text, DeviceRgb color) {
         table.addCell(new Cell()
-                .add(new Paragraph(text).setFontSize(10).setFontColor(color))
+                .add(new Paragraph(text).setFontSize(9).setFontColor(color))
                 .setTextAlignment(TextAlignment.CENTER)
                 .setBorder(new SolidBorder(new DeviceRgb(226, 232, 240), 1))
-                .setPadding(8));
+                .setPadding(5));
     }
 
     private static void addStatCard(Table table, String label, String value, DeviceRgb color) {
         var cell = new Cell()
                 .setBackgroundColor(new DeviceRgb(248, 250, 252))
                 .setBorder(new SolidBorder(new DeviceRgb(226, 232, 240), 1))
-                .setBorderRadius(new com.itextpdf.layout.properties.BorderRadius(8))
-                .setPadding(15)
+                .setBorderRadius(new com.itextpdf.layout.properties.BorderRadius(6))
+                .setPadding(8)
                 .setTextAlignment(TextAlignment.CENTER)
                 .setVerticalAlignment(VerticalAlignment.MIDDLE);
 
         cell.add(new Paragraph(label)
-                .setFontSize(9)
+                .setFontSize(8)
                 .setFontColor(MUTED)
-                .setMarginBottom(5));
+                .setMarginBottom(2));
 
         cell.add(new Paragraph(value)
-                .setFontSize(18)
+                .setFontSize(14)
                 .setBold()
                 .setFontColor(color));
 

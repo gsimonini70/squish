@@ -697,7 +697,7 @@ public final class MonitorServer implements AutoCloseable {
                             </div>
                             <div class="arrow">→</div>
                             <div class="size-item">
-                                <div class="size-label">Final</div>
+                                <div class="size-label">Actual</div>
                                 <div id="finalDb" class="size-value green">-</div>
                             </div>
                             <div class="size-item">
@@ -866,12 +866,12 @@ public final class MonitorServer implements AutoCloseable {
                             document.getElementById('initialDb').textContent = formatSize(d.initialDbSizeBytes);
                             document.getElementById('projectedDb').textContent = formatSize(d.projectedFinalBytes);
 
-                            if (d.completed) {
-                                document.getElementById('finalDb').textContent = formatSize(d.finalDbSizeBytes);
-                                const savedBytes = d.initialDbSizeBytes - d.finalDbSizeBytes;
-                                const pct = d.initialDbSizeBytes > 0 ? (savedBytes / d.initialDbSizeBytes * 100) : 0;
-                                document.getElementById('savings').textContent = formatSize(savedBytes) + ' (' + pct.toFixed(1) + '%)';
-                            }
+                            // Current/Final DB size - always show (works in batch and watchdog mode)
+                            const currentSize = d.completed ? d.finalDbSizeBytes : d.currentDbSizeBytes;
+                            document.getElementById('finalDb').textContent = formatSize(currentSize);
+                            const savedBytes = d.initialDbSizeBytes - currentSize;
+                            const pct = d.initialDbSizeBytes > 0 ? (savedBytes / d.initialDbSizeBytes * 100) : 0;
+                            document.getElementById('savings').textContent = formatSize(savedBytes) + ' (' + pct.toFixed(1) + '%)';
 
                             // Stats
                             document.getElementById('read').textContent = d.read.toLocaleString();

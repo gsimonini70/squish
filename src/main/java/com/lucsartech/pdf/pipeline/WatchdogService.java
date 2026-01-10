@@ -219,7 +219,7 @@ public final class WatchdogService implements AutoCloseable {
     private void sendCycleReport(long cycle, int recordsProcessed) {
         try {
             // Generate PDF report for this cycle
-            String reportName = String.format("watchdog_cycle_%d_report", cycle);
+            String reportName = String.format("squish_cycle_%d", cycle);
             Path reportPath = ReportGenerator.generate(tracker, properties, reportName);
             log.info("Cycle report generated: {}", reportPath);
 
@@ -369,9 +369,17 @@ public final class WatchdogService implements AutoCloseable {
         var q = properties.getQuery();
         String updateSql = String.format("UPDATE %s SET %s = ? WHERE %s = ?",
                 q.getDetailTable(), q.getDataColumn(), q.getDetailIdColumn());
+        // Use MERGE to handle duplicate records (upsert)
         String trackingSql = String.format("""
-            INSERT INTO %s (OTT_ID, ORIGINAL_SIZE, COMPRESSED_SIZE, SAVINGS_PERCENT, STATUS, HOSTNAME)
-            VALUES (?, ?, ?, ?, 'SUCCESS', ?)
+            MERGE INTO %s T
+            USING (SELECT ? AS OTT_ID, ? AS ORIG_SIZE, ? AS COMP_SIZE, ? AS SAVINGS, ? AS HOST FROM DUAL) S
+            ON (T.OTT_ID = S.OTT_ID)
+            WHEN MATCHED THEN UPDATE SET
+                T.ORIGINAL_SIZE = S.ORIG_SIZE, T.COMPRESSED_SIZE = S.COMP_SIZE,
+                T.SAVINGS_PERCENT = S.SAVINGS, T.STATUS = 'SUCCESS',
+                T.HOSTNAME = S.HOST, T.PROCESSED_DATE = SYSTIMESTAMP
+            WHEN NOT MATCHED THEN INSERT (OTT_ID, ORIGINAL_SIZE, COMPRESSED_SIZE, SAVINGS_PERCENT, STATUS, HOSTNAME)
+                VALUES (S.OTT_ID, S.ORIG_SIZE, S.COMP_SIZE, S.SAVINGS, 'SUCCESS', S.HOST)
             """, q.getTrackingTable());
 
         try (Connection conn = dataSource.getConnection();
@@ -385,7 +393,7 @@ public final class WatchdogService implements AutoCloseable {
             updatePs.setLong(2, result.id());
             updatePs.executeUpdate();
 
-            // Track in SQUISH_PROCESSED
+            // Track in SQUISH_PROCESSED (upsert)
             double savingsPercent = 100.0 * (1 - (double) result.compressedSize() / result.originalSize());
             trackingPs.setLong(1, result.id());
             trackingPs.setLong(2, result.originalSize());
@@ -407,9 +415,16 @@ public final class WatchdogService implements AutoCloseable {
      */
     private void trackSkipped(CompressionResult.Skipped result) {
         var q = properties.getQuery();
+        // Use MERGE to handle duplicate records (upsert)
         String trackingSql = String.format("""
-            INSERT INTO %s (OTT_ID, ORIGINAL_SIZE, STATUS, ERROR_MESSAGE, HOSTNAME)
-            VALUES (?, ?, 'SKIPPED', ?, ?)
+            MERGE INTO %s T
+            USING (SELECT ? AS OTT_ID, ? AS ORIG_SIZE, ? AS ERR_MSG, ? AS HOST FROM DUAL) S
+            ON (T.OTT_ID = S.OTT_ID)
+            WHEN MATCHED THEN UPDATE SET
+                T.ORIGINAL_SIZE = S.ORIG_SIZE, T.STATUS = 'SKIPPED',
+                T.ERROR_MESSAGE = S.ERR_MSG, T.HOSTNAME = S.HOST, T.PROCESSED_DATE = SYSTIMESTAMP
+            WHEN NOT MATCHED THEN INSERT (OTT_ID, ORIGINAL_SIZE, STATUS, ERROR_MESSAGE, HOSTNAME)
+                VALUES (S.OTT_ID, S.ORIG_SIZE, 'SKIPPED', S.ERR_MSG, S.HOST)
             """, q.getTrackingTable());
 
         try (Connection conn = dataSource.getConnection();
@@ -432,9 +447,16 @@ public final class WatchdogService implements AutoCloseable {
      */
     private void trackFailure(CompressionResult.Failure result) {
         var q = properties.getQuery();
+        // Use MERGE to handle duplicate records (upsert)
         String trackingSql = String.format("""
-            INSERT INTO %s (OTT_ID, ORIGINAL_SIZE, STATUS, ERROR_MESSAGE, HOSTNAME)
-            VALUES (?, 0, 'ERROR', ?, ?)
+            MERGE INTO %s T
+            USING (SELECT ? AS OTT_ID, ? AS ERR_MSG, ? AS HOST FROM DUAL) S
+            ON (T.OTT_ID = S.OTT_ID)
+            WHEN MATCHED THEN UPDATE SET
+                T.ORIGINAL_SIZE = 0, T.STATUS = 'ERROR',
+                T.ERROR_MESSAGE = S.ERR_MSG, T.HOSTNAME = S.HOST, T.PROCESSED_DATE = SYSTIMESTAMP
+            WHEN NOT MATCHED THEN INSERT (OTT_ID, ORIGINAL_SIZE, STATUS, ERROR_MESSAGE, HOSTNAME)
+                VALUES (S.OTT_ID, 0, 'ERROR', S.ERR_MSG, S.HOST)
             """, q.getTrackingTable());
 
         try (Connection conn = dataSource.getConnection();

@@ -185,6 +185,17 @@ public final class ProgressTracker {
         return (long) (initial * ratio);
     }
 
+    /**
+     * Calculate current database size based on compression savings.
+     * This works in both batch and watchdog modes.
+     * Formula: initial - (originalBytes - compressedBytes) = initial - savings
+     */
+    public long currentDbSizeBytes() {
+        long initial = initialDbSizeBytes.get();
+        long savedBytes = originalBytes.sum() - compressedBytes.sum();
+        return initial - savedBytes;
+    }
+
     public Duration elapsedTime() {
         if (startTime == null) return Duration.ZERO;
         Instant end = endTime != null ? endTime : Instant.now();
@@ -243,6 +254,7 @@ public final class ProgressTracker {
                 initialDbSizeBytes.get(),
                 finalDbSizeBytes.get(),
                 projectedFinalSizeBytes(),
+                currentDbSizeBytes(),
                 compressionRatio(),
                 savingsPercent(),
                 progressPercent(),
@@ -271,6 +283,7 @@ public final class ProgressTracker {
             long initialDbSizeBytes,
             long finalDbSizeBytes,
             long projectedFinalBytes,
+            long currentDbSizeBytes,
             double compressionRatio,
             double savingsPercent,
             double progressPercent,
@@ -286,6 +299,7 @@ public final class ProgressTracker {
         public double initialDbMb() { return initialDbSizeBytes / 1024.0 / 1024.0; }
         public double finalDbMb() { return finalDbSizeBytes / 1024.0 / 1024.0; }
         public double projectedFinalMb() { return projectedFinalBytes / 1024.0 / 1024.0; }
+        public double currentDbMb() { return currentDbSizeBytes / 1024.0 / 1024.0; }
 
         public String elapsedFormatted() {
             long h = elapsedSeconds / 3600;

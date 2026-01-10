@@ -358,9 +358,17 @@ public final class CompressionPipeline implements AutoCloseable {
         var q = properties.getQuery();
         String updateSql = String.format("UPDATE %s SET %s = ? WHERE %s = ?",
             q.getDetailTable(), q.getDataColumn(), q.getDetailIdColumn());
+        // Use MERGE to handle duplicate records (upsert)
         String trackingSql = String.format("""
-            INSERT INTO %s (OTT_ID, ORIGINAL_SIZE, COMPRESSED_SIZE, SAVINGS_PERCENT, STATUS, HOSTNAME)
-            VALUES (?, ?, ?, ?, 'SUCCESS', ?)
+            MERGE INTO %s T
+            USING (SELECT ? AS OTT_ID, ? AS ORIG_SIZE, ? AS COMP_SIZE, ? AS SAVINGS, ? AS HOST FROM DUAL) S
+            ON (T.OTT_ID = S.OTT_ID)
+            WHEN MATCHED THEN UPDATE SET
+                T.ORIGINAL_SIZE = S.ORIG_SIZE, T.COMPRESSED_SIZE = S.COMP_SIZE,
+                T.SAVINGS_PERCENT = S.SAVINGS, T.STATUS = 'SUCCESS',
+                T.HOSTNAME = S.HOST, T.PROCESSED_DATE = SYSTIMESTAMP
+            WHEN NOT MATCHED THEN INSERT (OTT_ID, ORIGINAL_SIZE, COMPRESSED_SIZE, SAVINGS_PERCENT, STATUS, HOSTNAME)
+                VALUES (S.OTT_ID, S.ORIG_SIZE, S.COMP_SIZE, S.SAVINGS, 'SUCCESS', S.HOST)
             """, q.getTrackingTable());
         String hostname = getHostname();
 
@@ -436,16 +444,22 @@ public final class CompressionPipeline implements AutoCloseable {
 
     /**
      * Track non-success results (Skipped/Failure) in tracking table to avoid re-processing.
+     * Uses MERGE (upsert) to handle duplicate records.
      */
     private void trackNonSuccess(CompressionResult result) {
         var q = properties.getQuery();
         String hostname = getHostname();
 
-        String sql;
         if (result instanceof CompressionResult.Skipped skipped) {
-            sql = String.format("""
-                INSERT INTO %s (OTT_ID, ORIGINAL_SIZE, STATUS, ERROR_MESSAGE, HOSTNAME)
-                VALUES (?, ?, 'SKIPPED', ?, ?)
+            String sql = String.format("""
+                MERGE INTO %s T
+                USING (SELECT ? AS OTT_ID, ? AS ORIG_SIZE, ? AS ERR_MSG, ? AS HOST FROM DUAL) S
+                ON (T.OTT_ID = S.OTT_ID)
+                WHEN MATCHED THEN UPDATE SET
+                    T.ORIGINAL_SIZE = S.ORIG_SIZE, T.STATUS = 'SKIPPED',
+                    T.ERROR_MESSAGE = S.ERR_MSG, T.HOSTNAME = S.HOST, T.PROCESSED_DATE = SYSTIMESTAMP
+                WHEN NOT MATCHED THEN INSERT (OTT_ID, ORIGINAL_SIZE, STATUS, ERROR_MESSAGE, HOSTNAME)
+                    VALUES (S.OTT_ID, S.ORIG_SIZE, 'SKIPPED', S.ERR_MSG, S.HOST)
                 """, q.getTrackingTable());
 
             try (Connection conn = dataSource.getConnection();
@@ -460,9 +474,15 @@ public final class CompressionPipeline implements AutoCloseable {
                 log.warn("Failed to track skipped ID {}: {}", skipped.id(), e.getMessage());
             }
         } else if (result instanceof CompressionResult.Failure failure) {
-            sql = String.format("""
-                INSERT INTO %s (OTT_ID, ORIGINAL_SIZE, STATUS, ERROR_MESSAGE, HOSTNAME)
-                VALUES (?, 0, 'ERROR', ?, ?)
+            String sql = String.format("""
+                MERGE INTO %s T
+                USING (SELECT ? AS OTT_ID, ? AS ERR_MSG, ? AS HOST FROM DUAL) S
+                ON (T.OTT_ID = S.OTT_ID)
+                WHEN MATCHED THEN UPDATE SET
+                    T.ORIGINAL_SIZE = 0, T.STATUS = 'ERROR',
+                    T.ERROR_MESSAGE = S.ERR_MSG, T.HOSTNAME = S.HOST, T.PROCESSED_DATE = SYSTIMESTAMP
+                WHEN NOT MATCHED THEN INSERT (OTT_ID, ORIGINAL_SIZE, STATUS, ERROR_MESSAGE, HOSTNAME)
+                    VALUES (S.OTT_ID, 0, 'ERROR', S.ERR_MSG, S.HOST)
                 """, q.getTrackingTable());
 
             try (Connection conn = dataSource.getConnection();

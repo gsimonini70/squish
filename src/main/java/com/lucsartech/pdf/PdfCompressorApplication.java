@@ -121,7 +121,7 @@ public class PdfCompressorApplication implements CommandLineRunner {
 
             // Generate report
             log.info("Generating PDF report...");
-            var reportPath = ReportGenerator.generate(tracker, properties, "compression_report");
+            var reportPath = ReportGenerator.generate(tracker, properties, "squish_report");
             if (reportPath != null) {
                 log.info("Report saved to: {}", reportPath.toAbsolutePath());
             }
@@ -190,7 +190,7 @@ public class PdfCompressorApplication implements CommandLineRunner {
 
             // Generate final report
             log.info("Generating final report...");
-            var reportPath = ReportGenerator.generate(tracker, properties, "watchdog_report");
+            var reportPath = ReportGenerator.generate(tracker, properties, "squish_watchdog_report");
             if (reportPath != null) {
                 log.info("Report saved to: {}", reportPath.toAbsolutePath());
             }
