@@ -5,16 +5,62 @@
 
 spring:
   application:
-    name: pdf-compressor-modern
+    name: squish
   profiles:
     active: dev
   main:
     banner-mode: off
+  # Jackson: omit null fields so the JSON contract matches the old Gson behaviour
+  # (e.g. ProfilesResponse.activeProfile and the Float fields of ProfileDetailInfo).
+  jackson:
+    default-property-inclusion: non_null
+  # Upload limits guard the /api/compress and /api/thumbnail endpoints against DoS.
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
 
 # Compression settings
-compressor:
-  mode: AGGRESSIVE  # LOSSLESS, MEDIUM, AGGRESSIVE
+squish:
+  mode: AGGRESSIVE  # Legacy: LOSSLESS, MEDIUM, AGGRESSIVE (used if no profile set)
   dry-run: false
+
+  # Compression Profiles (v3.0+)
+  # Use active-profile to select a named profile, or fall back to 'mode' above
+  active-profile: office  # Use this named profile (comment out to use legacy 'mode')
+
+  profiles:
+    # Archival quality - lossless compression for long-term storage
+    archival:
+      description: "Archival quality - lossless compression"
+      mode: LOSSLESS
+      pdfa-enabled: true
+      pdfa-conformance: PDF_A_2B
+
+    # Standard office documents - balanced compression
+    office:
+      description: "Office documents - balanced compression"
+      mode: MEDIUM
+
+    # Maximum compression for web/email
+    web:
+      description: "Web/email - maximum compression"
+      mode: AGGRESSIVE
+
+    # Custom profile example with explicit settings
+    custom-example:
+      description: "Custom profile with explicit scale and quality"
+      custom-scale-factor: 0.7   # 70% scale
+      custom-jpeg-quality: 0.65  # 65% JPEG quality
+
+    # Confidential documents with watermark (watermark feature coming soon)
+    confidential:
+      description: "Confidential documents with watermark"
+      mode: MEDIUM
+      watermark-enabled: true
+      watermark-text: "CONFIDENTIAL"
+      watermark-position: DIAGONAL
+      watermark-opacity: 0.3
 
   database:
     jdbc-url: jdbc:oracle:thin:@//localhost:1521/ORCL
@@ -51,11 +97,19 @@ compressor:
   # HTTP/HTTPS Dashboard Configuration
   http:
     port: 8080
-    ssl-enabled: false                    # Enable HTTPS
+    ssl-enabled: false                    # Enable HTTPS (fails fast if keystore missing)
     keystore-path: /path/to/keystore.p12  # Path to PKCS12 keystore
     keystore-password: changeit           # Keystore password
     keystore-type: PKCS12                 # PKCS12 or JKS
     ssl-protocol: TLSv1.3                 # TLSv1.2 or TLSv1.3
+    # Cross-origin origins allowed to call the API. Empty = no CORS (no wildcard).
+    cors-allowed-origins: []              # e.g. ["https://app.example.com"]
+
+  # Web dashboard / API security (HTTP Basic on write endpoints)
+  security:
+    enabled: true                         # false = all endpoints public (tests / closed LAN)
+    username: admin
+    # password:                           # leave unset to auto-generate a random one (logged at WARN)
 
   watchdog:
     enabled: false
@@ -91,6 +145,6 @@ compressor:
 logging:
   level:
     root: INFO
-    com.lucsartech.pdf: INFO
+    com.lucsartech.squish: INFO
   pattern:
     console: "%d{HH:mm:ss.SSS} %clr(%5level) %clr([%15.15thread]){magenta} %clr(%-40.40logger{39}){cyan} - %msg%n"

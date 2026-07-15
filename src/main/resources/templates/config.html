@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squish — Configuration</title>
+    <link rel="stylesheet" th:href="@{/css/squish.css}" href="/css/squish.css">
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <span class="lc">🗜️</span>
+        <div class="brandname">Squish</div>
+        <div class="h-src">Configuration</div>
+        <div class="grow"></div>
+        <nav class="h-nav">
+            <a href="/">Dashboard</a>
+            <a href="/api/config">API</a>
+            <a href="/metrics">Metrics</a>
+        </nav>
+        <button class="theme" id="themeToggle" type="button" aria-label="Switch theme">
+            <span class="ico">◐</span><span class="lbl-light">Dark</span><span class="lbl-dark">Light</span>
+        </button>
+    </header>
+
+    <div id="message" class="message"></div>
+
+    <!-- Current status -->
+    <div class="eyebrow"><span class="n">01</span> <b>Current status</b></div>
+    <div class="card">
+        <div class="status-row">
+            <span class="status-label">Active Profile</span>
+            <span id="activeProfile" class="status-value badge badge-purple">-</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">Legacy Mode</span>
+            <span id="legacyMode" class="status-value">-</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">Dry Run</span>
+            <span id="dryRun" class="status-value">-</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">Watchdog</span>
+            <span id="watchdog" class="status-value">-</span>
+        </div>
+    </div>
+
+    <!-- Profiles -->
+    <div class="eyebrow"><span class="n">02</span> <b>Compression Profiles</b></div>
+    <div class="card">
+        <div id="profilesContainer" class="loading">Loading profiles...</div>
+    </div>
+
+    <!-- Apply -->
+    <div style="text-align:center; margin-top:18px;">
+        <button id="applyBtn" class="btn btn-primary" disabled>Apply Selected Profile</button>
+    </div>
+
+    <footer>
+        <div>API <code>/api/config</code> · Prometheus <code>/metrics</code></div>
+        <div>Lucsartech Srl · Squish</div>
+    </footer>
+</div>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var KEY = 'squish-theme';
+    try {
+      var saved = localStorage.getItem(KEY);
+      if (saved === 'light' || saved === 'dark') root.dataset.theme = saved;
+    } catch (e) {}
+    document.getElementById('themeToggle').addEventListener('click', function () {
+      var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var current = root.dataset.theme || (systemDark ? 'dark' : 'light');
+      var next = current === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      try { localStorage.setItem(KEY, next); } catch (e) {}
+    });
+  })();
+</script>
+<script th:src="@{/js/config.js}" src="/js/config.js"></script>
+</body>
+</html>

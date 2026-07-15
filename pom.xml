@@ -12,8 +12,8 @@
     </parent>
 
     <groupId>com.lucsartech</groupId>
-    <artifactId>pdf-compressor-modern</artifactId>
-    <version>3.0.0</version>
+    <artifactId>squish</artifactId>
+    <version>3.2.0</version>
     <packaging>jar</packaging>
 
     <name>Squish PDF Compression Engine</name>
@@ -35,6 +35,21 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
         </dependency>
+        <!-- Spring MVC (embedded Tomcat) - replaces com.sun.net.httpserver -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- Thymeleaf for server-side dashboard/config templates -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-thymeleaf</artifactId>
+        </dependency>
+        <!-- Spring Security for HTTP Basic auth on write endpoints -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-configuration-processor</artifactId>
@@ -50,6 +65,17 @@
         <dependency>
             <groupId>com.itextpdf</groupId>
             <artifactId>layout</artifactId>
+            <version>${itext.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>pdfa</artifactId>
+            <version>${itext.version}</version>
+        </dependency>
+        <!-- Bouncy Castle for PDF encryption -->
+        <dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>bouncy-castle-adapter</artifactId>
             <version>${itext.version}</version>
         </dependency>
 
@@ -98,6 +124,24 @@
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
         </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Spring Security test support (httpBasic() request post-processor, @WithMockUser) -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -106,7 +150,7 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>com.lucsartech.pdf.PdfCompressorApplication</mainClass>
+                    <mainClass>com.lucsartech.squish.SquishApplication</mainClass>
                 </configuration>
             </plugin>
             <plugin>

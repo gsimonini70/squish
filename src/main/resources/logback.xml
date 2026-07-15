@@ -9,9 +9,9 @@
 
     <!-- File appender for full logs -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>logs/pdf-compressor.log</file>
+        <file>logs/squish.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>logs/pdf-compressor.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <fileNamePattern>logs/squish.%d{yyyy-MM-dd}.log</fileNamePattern>
             <maxHistory>7</maxHistory>
             <totalSizeCap>100MB</totalSizeCap>
         </rollingPolicy>
@@ -21,9 +21,9 @@
     </appender>
 
     <!-- Application loggers -->
-    <logger name="com.lucsartech.pdf" level="INFO"/>
-    <logger name="com.lucsartech.pdf.compression" level="DEBUG"/>
-    <logger name="com.lucsartech.pdf.pipeline" level="INFO"/>
+    <logger name="com.lucsartech.squish" level="INFO"/>
+    <logger name="com.lucsartech.squish.compression" level="DEBUG"/>
+    <logger name="com.lucsartech.squish.pipeline" level="INFO"/>
 
     <!-- Third party loggers -->
     <logger name="com.zaxxer.hikari" level="WARN"/>

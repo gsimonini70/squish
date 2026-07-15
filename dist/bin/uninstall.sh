@@ -12,6 +12,7 @@ SERVICE_USER="${SERVICE_USER:-squish}"
 INIT_SYSTEM=""
 KEEP_CONFIG=0
 KEEP_LOGS=0
+KEEP_REPORTS=0
 
 # Colors
 RED='\033[0;31m'
@@ -45,7 +46,8 @@ usage() {
     echo "Options:"
     echo "  --keep-config    Keep configuration files"
     echo "  --keep-logs      Keep log files"
-    echo "  --keep-all       Keep config and logs"
+    echo "  --keep-reports   Keep generated PDF reports"
+    echo "  --keep-all       Keep config, logs and reports"
     echo "  -y, --yes        Skip confirmation"
     echo "  -h, --help       Show this help"
     echo ""
@@ -83,6 +85,9 @@ stop_service() {
         sysv-*)
             service squish stop 2>/dev/null || true
             print_ok "Service stopped"
+            print_warn "If you supervised Squish with cron, remove the entry now:"
+            print_warn "  crontab -l | grep -v '/etc/init.d/squish check' | crontab -"
+            print_warn "Otherwise cron will keep trying to restart the removed service."
             ;;
         *)
             # Try to stop via PID file
@@ -139,8 +144,9 @@ remove_files() {
     rm -f "$INSTALL_DIR/squish.jar"
     rm -rf "$INSTALL_DIR/bin"
     rm -rf "$INSTALL_DIR/service"
+    rm -rf "$INSTALL_DIR/sql"
     rm -f "$INSTALL_DIR/squish.pid"
-    
+
     # Config
     if [ "$KEEP_CONFIG" -eq 0 ]; then
         rm -rf "$INSTALL_DIR/config"
@@ -148,7 +154,7 @@ remove_files() {
     else
         print_warn "Configuration kept: $INSTALL_DIR/config/"
     fi
-    
+
     # Logs
     if [ "$KEEP_LOGS" -eq 0 ]; then
         rm -rf "$INSTALL_DIR/logs"
@@ -157,7 +163,15 @@ remove_files() {
     else
         print_warn "Logs kept: $INSTALL_DIR/logs/"
     fi
-    
+
+    # Reports (generated PDF reports - kept by default, they are business output)
+    if [ "$KEEP_REPORTS" -eq 0 ]; then
+        rm -rf "$INSTALL_DIR/reports"
+        print_ok "Reports removed"
+    else
+        print_warn "Reports kept: $INSTALL_DIR/reports/"
+    fi
+
     # Remove directory if empty
     rmdir "$INSTALL_DIR" 2>/dev/null || true
     
@@ -206,7 +220,7 @@ print_summary() {
     echo "  Uninstallation Complete!"
     echo "========================================"
     echo ""
-    if [ "$KEEP_CONFIG" -eq 1 ] || [ "$KEEP_LOGS" -eq 1 ]; then
+    if [ "$KEEP_CONFIG" -eq 1 ] || [ "$KEEP_LOGS" -eq 1 ] || [ "$KEEP_REPORTS" -eq 1 ]; then
         echo "Some files were kept in: $INSTALL_DIR"
     fi
     echo ""
@@ -222,9 +236,13 @@ while [ $# -gt 0 ]; do
         --keep-logs)
             KEEP_LOGS=1
             ;;
+        --keep-reports)
+            KEEP_REPORTS=1
+            ;;
         --keep-all)
             KEEP_CONFIG=1
             KEEP_LOGS=1
+            KEEP_REPORTS=1
             ;;
         -y|--yes)
             SKIP_CONFIRM=1

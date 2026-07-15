@@ -61,13 +61,13 @@ mvn clean package -DskipTests
 
 ```bash
 # Default profile
-java -jar target/pdf-compressor-modern-2.0.0.jar
+java -jar target/squish-3.0.0.jar
 
 # With specific profile
-java -jar target/pdf-compressor-modern-2.0.0.jar --spring.profiles.active=prod
+java -jar target/squish-3.0.0.jar --spring.profiles.active=prod
 
 # Dry-run mode (no database writes)
-java -jar target/pdf-compressor-modern-2.0.0.jar --compressor.dry-run=true
+java -jar target/squish-3.0.0.jar --squish.dry-run=true
 ```
 
 ---
@@ -86,7 +86,7 @@ Configuration is managed via YAML files in `src/main/resources/`:
 ### Configuration Options
 
 ```yaml
-compressor:
+squish:
   # Compression mode: LOSSLESS, MEDIUM, AGGRESSIVE
   mode: AGGRESSIVE
 
@@ -350,7 +350,7 @@ rate(squish_bytes_original_total[1m]) / 1024 / 1024
 Processes all records from `id-from` to `id-to` and exits:
 
 ```bash
-java -jar squish.jar --compressor.pipeline.id-from=1 --compressor.pipeline.id-to=10000
+java -jar squish.jar --squish.pipeline.id-from=1 --squish.pipeline.id-to=10000
 ```
 
 ### Watchdog Mode
@@ -358,7 +358,7 @@ java -jar squish.jar --compressor.pipeline.id-from=1 --compressor.pipeline.id-to
 Continuously monitors for new records:
 
 ```bash
-java -jar squish.jar --compressor.watchdog.enabled=true
+java -jar squish.jar --squish.watchdog.enabled=true
 ```
 
 ---
@@ -377,7 +377,7 @@ keytool -genkeypair -alias squish -keyalg RSA -keysize 2048 \
 Enable in configuration:
 
 ```yaml
-compressor:
+squish:
   http:
     ssl-enabled: true
     keystore-path: /path/to/squish.p12
@@ -390,7 +390,7 @@ compressor:
 Supports both STARTTLS (port 587) and direct SSL (port 465):
 
 ```yaml
-compressor:
+squish:
   email:
     smtp-host: smtp.office365.com
     smtp-port: 587

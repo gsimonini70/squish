@@ -49,7 +49,7 @@ if %errorlevel% equ 0 (
 
 REM Ask about config/logs
 set KEEP_CONFIG=0
-set /p KEEP="Keep configuration and logs? [y/N]: "
+set /p KEEP="Keep configuration, logs and reports? [y/N]: "
 if /i "%KEEP%" equ "y" set KEEP_CONFIG=1
 
 REM Remove files
@@ -59,13 +59,15 @@ del /q "%INSTALL_DIR%\squish.jar" 2>nul
 del /q "%INSTALL_DIR%\squish.pid" 2>nul
 del /q "%INSTALL_DIR%\squish.log" 2>nul
 rmdir /s /q "%INSTALL_DIR%\bin" 2>nul
+rmdir /s /q "%INSTALL_DIR%\sql" 2>nul
 
 if %KEEP_CONFIG% equ 0 (
     rmdir /s /q "%INSTALL_DIR%\config" 2>nul
     rmdir /s /q "%INSTALL_DIR%\logs" 2>nul
-    echo [OK] Configuration and logs removed
+    rmdir /s /q "%INSTALL_DIR%\reports" 2>nul
+    echo [OK] Configuration, logs and reports removed
 ) else (
-    echo [WARN] Configuration and logs kept
+    echo [WARN] Configuration, logs and reports kept
 )
 
 REM Try to remove main directory

@@ -19,12 +19,58 @@
 #   chmod +x /etc/init.d/squish
 #   chkconfig --add squish      # RHEL/CentOS
 #   update-rc.d squish defaults # Debian/Ubuntu
+#
+# ############################################################################
+# # READ THIS: THIS SCRIPT DOES NOT RESTART A CRASHED SQUISH. IT CANNOT.
+# ############################################################################
+#
+# Squish is designed to DIE on an unrecoverable failure rather than linger:
+#   - WatchdogService catches a fatal Error (e.g. OutOfMemoryError), logs FATAL,
+#     stops the scheduler and calls System.exit(1);
+#   - CompressionPipeline throws PipelineFailedException and exits non-zero on a
+#     fatal stage failure.
+# That is the correct behaviour ONLY IF SOMETHING RESTARTS THE PROCESS. Otherwise
+# the previous silent zombie just becomes a silent corpse.
+#
+# A classic SysV init script is a one-shot launcher: it forks the JVM, writes a
+# PID file, and exits. Nothing is left watching. There is no honest way to add
+# respawn *inside* this file without shipping a bespoke supervisor daemon, which
+# we will not do. So:
+#
+#   *** systemd (dist/service/squish.service, Restart=on-failure) is the ***
+#   *** SUPPORTED deployment. Use it whenever the host has systemd.      ***
+#
+# If you are stuck on SysV, you MUST supervise Squish with one of these standard
+# mechanisms. Pick exactly one:
+#
+#   (a) cron + the 'check' action of this script (simplest; up to 1 min downtime).
+#       Add to root's crontab:
+#           * * * * * /etc/init.d/squish check >> /opt/squish/logs/respawn.log 2>&1
+#       'check' starts Squish if, and only if, it is not currently running.
+#
+#   (b) /etc/inittab respawn (true respawn, init itself supervises).
+#       Requires a FOREGROUND process - use the launcher directly, not this script:
+#           sq:2345:respawn:/bin/su -s /bin/sh squish -c /opt/squish/bin/squish-run.sh
+#       then: telinit q
+#       Note: with (b) do NOT also chkconfig/update-rc.d this script on, or you
+#       will start Squish twice.
+#
+#   (c) monit / supervisord, e.g. monit:
+#           check process squish with pidfile /opt/squish/squish.pid
+#             start program = "/etc/init.d/squish start"
+#             stop  program = "/etc/init.d/squish stop"
+#             if does not exist then restart
+#
+# 'status' below is honest about the difference between "running", "crashed"
+# (dead, PID file left behind) and "not running", using the LSB exit codes
+# 0 / 1 / 3 - so cron, monit and a human all get the same answer.
+# ############################################################################
 
 NAME=squish
 DESC="Squish PDF Compression Engine"
 APP_HOME=/opt/squish
-JAR_FILE=$APP_HOME/squish.jar
-PID_FILE=$APP_HOME/squish.pid
+LAUNCHER=$APP_HOME/bin/squish-run.sh
+PID_FILE=${PID_FILE:-$APP_HOME/squish.pid}
 LOG_FILE=$APP_HOME/logs/squish.log
 USER=squish
 
@@ -38,161 +84,92 @@ if [ -f /lib/lsb/init-functions ]; then
     . /lib/lsb/init-functions
 fi
 
-# Note: Configuration (JAVA_HOME, DB credentials, etc.) is loaded from
-# $APP_HOME/config/squish.env by the wrapper script that runs as $USER.
-# This ensures credentials are NOT visible in ps aux.
+# Configuration (JAVA_HOME, DB credentials, dashboard password, ...) is loaded
+# from $APP_HOME/config/squish.env by bin/squish-run.sh, which runs as $USER and
+# passes everything to the JVM through the environment - never on the command
+# line, so nothing sensitive shows up in `ps aux`.
+
+# Returns 0 if the PID in $PID_FILE is alive, 1 if the file exists but the
+# process is gone (crashed), 3 if there is no PID file at all.
+probe() {
+    if [ ! -f "$PID_FILE" ]; then
+        return 3
+    fi
+    PID=$(cat "$PID_FILE" 2>/dev/null)
+    if [ -z "$PID" ]; then
+        return 1
+    fi
+    if ps -p "$PID" > /dev/null 2>&1; then
+        return 0
+    fi
+    return 1
+}
 
 start() {
-    if [ -f "$PID_FILE" ]; then
-        PID=$(cat "$PID_FILE")
-        if ps -p "$PID" > /dev/null 2>&1; then
+    probe
+    case $? in
+        0)
             echo "$NAME is already running (PID: $PID)"
-            return 1
-        fi
+            return 0
+            ;;
+        1)
+            echo "$NAME left a stale PID file ($PID_FILE) - it crashed or was killed. Restarting."
+            rm -f "$PID_FILE"
+            ;;
+    esac
+
+    if [ ! -x "$LAUNCHER" ]; then
+        echo "ERROR: launcher not found or not executable: $LAUNCHER"
+        return 1
     fi
 
     echo "Starting $DESC..."
 
-    # Ensure logs directory exists
-    mkdir -p "$APP_HOME/logs"
-    chown $USER:$USER "$APP_HOME/logs" 2>/dev/null
-
-    # Create wrapper script that sources env and runs Java
-    # All configuration is passed via environment variables (NOT visible in ps aux)
-    WRAPPER="$APP_HOME/.squish_start_$$.sh"
-    cat > "$WRAPPER" << 'EOFSCRIPT'
-#!/bin/sh
-cd /opt/squish
-
-# Source environment file - all variables must have 'export' keyword
-. ./config/squish.env
-
-# Verify critical variables are set
-if [ -z "$DB_URL" ]; then
-    echo "ERROR: DB_URL not set in squish.env"
-    exit 1
-fi
-
-if [ -z "$JAVA_HOME" ]; then
-    echo "ERROR: JAVA_HOME not set in squish.env"
-    exit 1
-fi
-
-if [ ! -x "$JAVA_HOME/bin/java" ]; then
-    echo "ERROR: Java not found at $JAVA_HOME/bin/java"
-    exit 1
-fi
-
-# Generate runtime config file from environment variables
-# This file is readable only by the squish user and deleted on exit
-CONFIG_FILE="./config/.runtime-$$.yml"
-trap "rm -f $CONFIG_FILE" EXIT
-
-cat > "$CONFIG_FILE" << EOFCONFIG
-# Auto-generated from squish.env - DO NOT EDIT
-compressor:
-  mode: ${COMPRESSION_MODE:-AGGRESSIVE}
-  dry-run: ${DRY_RUN:-false}
-  database:
-    jdbc-url: ${DB_URL}
-    username: ${DB_USER}
-    password: ${DB_PASSWORD}
-  query:
-    master-table: ${MASTER_TABLE:-OTTICA}
-    detail-table: ${DETAIL_TABLE:-OTTICAI}
-    tracking-table: ${TRACKING_TABLE:-SQUISH_PROCESSED}
-    id-column: ${ID_COLUMN:-OTT_ID}
-    filename-column: ${FILENAME_COLUMN:-OTT_NOME_FILE}
-    detail-id-column: ${DETAIL_ID_COLUMN:-OTTI_ID}
-    detail-ctr-column: ${DETAIL_CTR_COLUMN:-OTTI_CTR}
-    data-column: ${DATA_COLUMN:-OTTI_DATA}
-    master-table-filter: "${MASTER_TABLE_FILTER:-}"
-  pipeline:
-    worker-threads: ${WORKER_THREADS:-16}
-    id-from: ${ID_FROM:-0}
-    id-to: ${ID_TO:-0}
-  http:
-    port: ${HTTP_PORT:-8080}
-    ssl-enabled: ${HTTP_SSL_ENABLED:-false}
-    keystore-path: ${HTTP_KEYSTORE_PATH:-}
-    keystore-password: ${HTTP_KEYSTORE_PASSWORD:-}
-    keystore-type: ${HTTP_KEYSTORE_TYPE:-PKCS12}
-    ssl-protocol: ${HTTP_SSL_PROTOCOL:-TLSv1.3}
-  watchdog:
-    enabled: ${WATCHDOG_ENABLED:-false}
-    poll-interval-seconds: ${WATCHDOG_INTERVAL:-300}
-  report:
-    enabled: ${REPORT_ENABLED:-true}
-    directory: ${REPORT_DIRECTORY:-reports}
-  email:
-    enabled: ${EMAIL_ENABLED:-false}
-    smtp-host: ${SMTP_HOST:-}
-    smtp-port: ${SMTP_PORT:-587}
-    smtp-user: ${SMTP_USER:-}
-    smtp-password: ${SMTP_PASSWORD:-}
-    ssl: ${SMTP_SSL:-false}
-    starttls: ${SMTP_STARTTLS:-true}
-    ssl-protocols: ${SMTP_SSL_PROTOCOLS:-TLSv1.2,TLSv1.3}
-    from: ${SMTP_FROM:-}
-    to:
-      - ${SMTP_TO:-}
-EOFCONFIG
-
-chmod 600 "$CONFIG_FILE"
-
-# Run Java with runtime config - credentials NOT visible in ps aux
-exec $JAVA_HOME/bin/java $JAVA_OPTS \
-    --add-opens=java.base/sun.nio.ch=ALL-UNNAMED \
-    -Dspring.profiles.active=${SPRING_PROFILES_ACTIVE:-prod} \
-    -Dspring.config.additional-location=file:$CONFIG_FILE \
-    -jar /opt/squish/squish.jar
-EOFSCRIPT
-    chmod 755 "$WRAPPER"
+    # Runtime directories. 'reports' is squish.report.directory, relative to
+    # APP_HOME - if it does not exist and is not writable by $USER, every PDF
+    # report write fails at the end of a run.
+    mkdir -p "$APP_HOME/logs" "$APP_HOME/reports"
     if [ -n "$USER" ]; then
-        chown "$USER:$USER" "$WRAPPER"
+        chown "$USER:$USER" "$APP_HOME/logs" "$APP_HOME/reports" 2>/dev/null
     fi
 
+    # squish-run.sh exec()s the JVM, so $! is the PID of the JVM itself.
     if [ -n "$USER" ]; then
-        su -s /bin/sh "$USER" -c "nohup $WRAPPER >> $LOG_FILE 2>&1 & echo \$! > $PID_FILE"
+        su -s /bin/sh "$USER" -c "nohup $LAUNCHER >> $LOG_FILE 2>&1 & echo \$! > $PID_FILE"
     else
-        nohup "$WRAPPER" >> $LOG_FILE 2>&1 &
+        nohup "$LAUNCHER" >> "$LOG_FILE" 2>&1 &
         echo $! > "$PID_FILE"
     fi
 
-    # Clean up wrapper after a delay (process has started)
-    ( sleep 5 && rm -f "$WRAPPER" ) &
-    
     sleep 3
-    
-    if [ -f "$PID_FILE" ]; then
-        PID=$(cat "$PID_FILE")
-        if ps -p "$PID" > /dev/null 2>&1; then
-            echo "$NAME started (PID: $PID)"
-            return 0
-        fi
+
+    if probe; then
+        echo "$NAME started (PID: $PID)"
+        return 0
     fi
-    
-    echo "ERROR: Failed to start $NAME"
+
+    echo "ERROR: Failed to start $NAME - see $LOG_FILE"
+    rm -f "$PID_FILE"
     return 1
 }
 
 stop() {
-    if [ ! -f "$PID_FILE" ]; then
-        echo "$NAME is not running"
-        return 0
-    fi
-    
-    PID=$(cat "$PID_FILE")
-    
-    if ! ps -p "$PID" > /dev/null 2>&1; then
-        echo "$NAME is not running (stale PID file)"
-        rm -f "$PID_FILE"
-        return 0
-    fi
-    
+    probe
+    case $? in
+        3)
+            echo "$NAME is not running"
+            return 0
+            ;;
+        1)
+            echo "$NAME is not running (stale PID file removed)"
+            rm -f "$PID_FILE"
+            return 0
+            ;;
+    esac
+
     echo "Stopping $DESC (PID: $PID)..."
     kill "$PID"
-    
+
     COUNT=0
     while [ $COUNT -lt 60 ]; do
         if ! ps -p "$PID" > /dev/null 2>&1; then
@@ -201,26 +178,58 @@ stop() {
         sleep 1
         COUNT=$((COUNT + 1))
     done
-    
+
     if ps -p "$PID" > /dev/null 2>&1; then
         echo "Force killing..."
         kill -9 "$PID"
     fi
-    
+
     rm -f "$PID_FILE"
     echo "$NAME stopped"
 }
 
+# LSB exit codes:
+#   0 - running
+#   1 - dead, but PID file exists  (i.e. IT CRASHED: exit(1) on a fatal Error,
+#       a failed pipeline stage, or an external kill -9)
+#   3 - not running
 status() {
-    if [ -f "$PID_FILE" ]; then
-        PID=$(cat "$PID_FILE")
-        if ps -p "$PID" > /dev/null 2>&1; then
+    probe
+    case $? in
+        0)
             echo "$NAME is running (PID: $PID)"
             return 0
-        fi
-    fi
-    echo "$NAME is not running"
-    return 3
+            ;;
+        1)
+            echo "$NAME is DEAD but $PID_FILE exists - the process crashed and"
+            echo "  nothing restarted it. Check $LOG_FILE for 'FATAL' and see the"
+            echo "  supervision notes at the top of this script."
+            return 1
+            ;;
+        *)
+            echo "$NAME is not running"
+            return 3
+            ;;
+    esac
+}
+
+# For cron-based supervision on SysV hosts (option (a) at the top of this file).
+# Starts Squish only if it is not currently running; silent when it is, so it
+# does not spam a mailbox every minute.
+check() {
+    probe
+    case $? in
+        0)
+            return 0
+            ;;
+        1)
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] $NAME is dead (stale PID file) - restarting"
+            ;;
+        *)
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] $NAME is not running - starting"
+            ;;
+    esac
+    start
 }
 
 case "$1" in
@@ -230,7 +239,7 @@ case "$1" in
     stop)
         stop
         ;;
-    restart|reload)
+    restart|reload|force-reload)
         stop
         sleep 2
         start
@@ -238,8 +247,12 @@ case "$1" in
     status)
         status
         ;;
+    check|restart-if-dead)
+        check
+        ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status}"
+        echo "Usage: $0 {start|stop|restart|status|check}"
+        echo "  check - start only if not running (for cron-based supervision)"
         exit 1
         ;;
 esac

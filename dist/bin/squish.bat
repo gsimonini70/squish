@@ -57,10 +57,24 @@ goto usage
 
 :start
 echo Starting %APP_NAME%...
-start /b "%JAVA_CMD%" %JAVA_OPTS% -jar %JAR_FILE% --spring.profiles.active=%SPRING_PROFILES_ACTIVE% > %LOG_FILE% 2>&1
+
+REM 'reports' is squish.report.directory (default 'reports', relative to the
+REM working directory). Without it the PDF report write fails at the end of a run.
+if not exist "%APP_HOME%\logs" mkdir "%APP_HOME%\logs"
+if not exist "%APP_HOME%\reports" mkdir "%APP_HOME%\reports"
+
+REM NOTE: the first quoted argument to `start` is the window TITLE, not the
+REM command. Without the explicit "Squish" title below, cmd took "%JAVA_CMD%" as
+REM the title and tried to execute %JAVA_OPTS% as the program - so `start` never
+REM actually launched Java.
+start "Squish" /b "%JAVA_CMD%" %JAVA_OPTS% -jar %JAR_FILE% --spring.profiles.active=%SPRING_PROFILES_ACTIVE% > %LOG_FILE% 2>&1
 echo %APP_NAME% started
 echo Dashboard: http://localhost:8080/
 echo Log file: %APP_HOME%\%LOG_FILE%
+echo.
+echo NOTE: nothing supervises this process. Squish exits with code 1 on a fatal
+echo       failure and will stay down until restarted. For unattended use, run it
+echo       as a Windows Service via NSSM with 'AppExit Default Restart'.
 goto end
 
 :stop
