@@ -183,5 +183,156 @@ async function applyProfile() {
     btn.textContent = 'Apply Selected Profile';
 }
 
+// ---- execution scope override (watchdog) ---------------------------------
+// Field names / ids are a public contract shared with ScopeController + ScopeResponse.
+
+let scopeState = null;
+
+// Populate the doc-type <select> with a "keep configured filter" default plus the allow-listed
+// types. Built with DOM APIs / textContent so a doc-type value can never be interpreted as markup.
+function renderDocTypeOptions(allowed) {
+    const sel = document.getElementById('scopeDocType');
+    const field = document.getElementById('scopeDocTypeField');
+    if (!sel) return;
+    sel.replaceChildren();
+
+    const keep = document.createElement('option');
+    keep.value = '';
+    keep.textContent = '— keep configured filter —';
+    sel.appendChild(keep);
+
+    (allowed || []).forEach(dt => {
+        const opt = document.createElement('option');
+        opt.value = dt;
+        opt.textContent = dt;
+        sel.appendChild(opt);
+    });
+
+    // Hide the selector entirely when no allow-list is configured: only the id range is overridable.
+    if (field) field.style.display = (allowed && allowed.length > 0) ? '' : 'none';
+}
+
+// Human-readable summary of the current scope for the status row.
+function describeScope(s) {
+    if (!s.active) return 'Configured (no override)';
+    const to = s.idTo && s.idTo > 0 ? s.idTo : '∞';
+    const parts = ['id ' + (s.idFrom || 0) + '–' + to];
+    if (s.docType) parts.push('type ' + s.docType);
+    if (s.autoRevert) parts.push('auto-revert');
+    let txt = 'Override · ' + parts.join(' · ');
+    if (s.appliedBy) txt += ' (by ' + s.appliedBy + ')';
+    return txt;
+}
+
+async function loadScope() {
+    const panel = document.getElementById('scopePanel');
+    const disabled = document.getElementById('scopeDisabled');
+    if (!panel) return;
+    try {
+        const res = await fetch('/api/scope?_=' + Date.now());
+        if (!res.ok) return;
+        const s = await res.json();
+        scopeState = s;
+
+        // Scope override only affects watchdog mode; be honest about it in batch mode.
+        panel.style.display = s.watchdogEnabled ? '' : 'none';
+        disabled.style.display = s.watchdogEnabled ? 'none' : 'block';
+
+        setText('scopePoll', s.pollIntervalSeconds != null ? s.pollIntervalSeconds : '?');
+        document.getElementById('scopeStatus').textContent = describeScope(s);
+        document.getElementById('scopeFilter').textContent = s.effectiveFilter || '—';
+
+        renderDocTypeOptions(s.allowedDocTypes);
+
+        // Reflect the live override into the form so "current" and the inputs agree.
+        if (s.active) {
+            document.getElementById('scopeIdFrom').value = s.idFrom || 0;
+            document.getElementById('scopeIdTo').value = s.idTo || 0;
+            document.getElementById('scopeDocType').value = s.docType || '';
+            document.getElementById('scopeAutoRevert').checked = !!s.autoRevert;
+        }
+        document.getElementById('scopeClearBtn').disabled = !s.active;
+    } catch (e) {
+        console.error('Failed to load scope:', e);
+    }
+}
+
+// setText mirror (dashboard.js has one; config.js does not) - id + text, null-safe.
+function setText(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+}
+
+function handleAuthOr(res) {
+    if (res.status === 401 || res.status === 403) {
+        showMessage('Not authorized to change the execution scope. Sign in with a write-access account.', 'error');
+        return true;
+    }
+    return false;
+}
+
+async function applyScope() {
+    const btn = document.getElementById('scopeApplyBtn');
+    const idFrom = parseInt(document.getElementById('scopeIdFrom').value, 10) || 0;
+    const idToRaw = parseInt(document.getElementById('scopeIdTo').value, 10);
+    const idTo = isNaN(idToRaw) ? 0 : idToRaw;
+    const docType = document.getElementById('scopeDocType').value || null;
+    const autoRevert = document.getElementById('scopeAutoRevert').checked;
+
+    if (idTo > 0 && idTo < idFrom) {
+        showMessage('Id to must be greater than or equal to Id from (or 0 for no limit).', 'error');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.textContent = 'Applying...';
+    try {
+        const res = await fetch('/api/scope', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ active: true, idFrom, idTo, docType, autoRevert })
+        });
+        if (!handleAuthOr(res)) {
+            const result = await res.json();
+            showMessage(result.message || (res.ok ? 'Scope applied' : 'Failed to apply scope'),
+                res.ok && result.success ? 'success' : 'error');
+            if (res.ok && result.success) await loadScope();
+        }
+    } catch (e) {
+        showMessage('Error: ' + e.message, 'error');
+    }
+    btn.disabled = false;
+    btn.textContent = 'Apply scope';
+}
+
+async function clearScope() {
+    const btn = document.getElementById('scopeClearBtn');
+    btn.disabled = true;
+    try {
+        const res = await fetch('/api/scope', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ active: false })
+        });
+        if (!handleAuthOr(res)) {
+            const result = await res.json();
+            showMessage(result.message || 'Scope reset', res.ok && result.success ? 'success' : 'error');
+            if (res.ok && result.success) await loadScope();
+        }
+    } catch (e) {
+        showMessage('Error: ' + e.message, 'error');
+    }
+    // loadScope() re-derives the disabled state; re-enable defensively if the request failed.
+    if (scopeState && scopeState.active) btn.disabled = false;
+}
+
+const scopeApplyBtn = document.getElementById('scopeApplyBtn');
+if (scopeApplyBtn) scopeApplyBtn.addEventListener('click', applyScope);
+const scopeClearBtn = document.getElementById('scopeClearBtn');
+if (scopeClearBtn) scopeClearBtn.addEventListener('click', clearScope);
+
 document.getElementById('applyBtn').addEventListener('click', applyProfile);
 loadConfig();
+loadScope();

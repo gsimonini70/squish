@@ -4,6 +4,7 @@ import com.lucsartech.squish.compression.Squish;
 import com.lucsartech.squish.email.EmailService;
 import com.lucsartech.squish.pipeline.CompressionPipeline;
 import com.lucsartech.squish.pipeline.ProgressTracker;
+import com.lucsartech.squish.pipeline.ScopeState;
 import com.lucsartech.squish.pipeline.WatchdogService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -21,6 +22,11 @@ public class BeanConfiguration {
     }
 
     @Bean
+    public ScopeState scopeState() {
+        return new ScopeState();
+    }
+
+    @Bean
     public Squish pdfCompressor(SquishProperties properties) {
         return new Squish(properties.getActiveCompressionProfile());
     }
@@ -35,8 +41,9 @@ public class BeanConfiguration {
     @Bean
     public WatchdogService watchdogService(
             SquishProperties properties,
-            ProgressTracker tracker) {
-        return new WatchdogService(properties, tracker);
+            ProgressTracker tracker,
+            ScopeState scopeState) {
+        return new WatchdogService(properties, tracker, scopeState);
     }
 
     @Bean

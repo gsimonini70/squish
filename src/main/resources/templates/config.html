@@ -57,6 +57,53 @@
         <button id="applyBtn" class="btn btn-primary" disabled>Apply Selected Profile</button>
     </div>
 
+    <!-- Execution scope (watchdog) -->
+    <div class="eyebrow"><span class="n">03</span> <b>Execution scope</b> · watchdog</div>
+    <div class="card">
+        <div id="scopeDisabled" class="scope-off" style="display:none">
+            This instance is not running in watchdog mode, so a scope override has no effect here.
+            Enable <code>squish.watchdog.enabled</code> to use it.
+        </div>
+        <div id="scopePanel" style="display:none">
+            <div class="status-row">
+                <span class="status-label">Current scope</span>
+                <span id="scopeStatus" class="status-value">—</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">Effective filter</span>
+                <span id="scopeFilter" class="status-value">—</span>
+            </div>
+            <p class="scope-note">
+                Narrows what the watchdog processes to a specific id range (and optionally a document
+                type). It only advances not-yet-done records — already-processed ones stay skipped, so it
+                can never redo or corrupt prior work. Applies from the next polling cycle
+                (~<span id="scopePoll">?</span>s); it is not persisted and reverts on restart.
+            </p>
+            <div class="scope-grid">
+                <div class="scope-field">
+                    <label for="scopeIdFrom">Id from</label>
+                    <input class="inp" id="scopeIdFrom" type="number" min="0" step="1" placeholder="0">
+                </div>
+                <div class="scope-field">
+                    <label for="scopeIdTo">Id to <span style="text-transform:none">(0 = no limit)</span></label>
+                    <input class="inp" id="scopeIdTo" type="number" min="0" step="1" placeholder="0">
+                </div>
+                <div class="scope-field" id="scopeDocTypeField">
+                    <label for="scopeDocType">Document type</label>
+                    <select class="inp" id="scopeDocType"></select>
+                </div>
+            </div>
+            <label class="scope-check">
+                <input id="scopeAutoRevert" type="checkbox">
+                Auto-return to the configured scope once this range is drained
+            </label>
+            <div class="scope-actions">
+                <button id="scopeApplyBtn" class="btn btn-primary" type="button">Apply scope</button>
+                <button id="scopeClearBtn" class="btn btn-ghost" type="button" disabled>Reset to standard</button>
+            </div>
+        </div>
+    </div>
+
     <footer>
         <div>API <code>/api/config</code> · Prometheus <code>/metrics</code></div>
         <div>Lucsartech Srl · Squish</div>

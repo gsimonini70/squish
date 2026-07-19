@@ -36,9 +36,13 @@ public final class WatchdogService implements AutoCloseable {
 
     private final SquishProperties properties;
     private final ProgressTracker tracker;
+    private final ScopeState scopeState;
     private final Squish compressor;
     private final HikariDataSource dataSource;
     private final EmailService emailService;
+
+    /** Last {@link ScopeState} version this service has reacted to (re-log + stats recompute). */
+    private volatile long lastScopeVersion = -1;
 
     private final ExecutorService executor;
     private final ScheduledExecutorService scheduler;
@@ -61,9 +65,10 @@ public final class WatchdogService implements AutoCloseable {
     @Autowired(required = false)
     private EmailService injectedEmailService;
 
-    public WatchdogService(SquishProperties properties, ProgressTracker tracker) {
+    public WatchdogService(SquishProperties properties, ProgressTracker tracker, ScopeState scopeState) {
         this.properties = properties;
         this.tracker = tracker;
+        this.scopeState = scopeState;
         this.compressor = new Squish(properties.getActiveCompressionProfile());
         this.dataSource = createDataSource();
 
@@ -114,12 +119,66 @@ public final class WatchdogService implements AutoCloseable {
     }
 
     /**
+     * The effective execution scope for a cycle: the master-table filter, the (bound) lower id
+     * bound, and the optional upper bound. Either the configured scope, or a runtime override.
+     *
+     * @param overrideActive true when a {@link ScopeState} override produced this scope. While an
+     *                       override is active the watchdog must NOT advance {@code lastProcessedId}
+     *                       (so returning to the configured scope resumes exactly where it left off),
+     *                       and it re-scans {@code [idFrom, idTo]} every cycle — the anti-join drains
+     *                       the window to zero as records get processed.
+     * @param docTypeRejected true when the override named a doc-type that is NOT on the allow-list;
+     *                        the filter falls back to the configured one and the caller logs it. This
+     *                        is the last-line defense that keeps free text out of the interpolated SQL.
+     */
+    public record EffectiveScope(String filter, long idFrom, boolean hasUpperBound, long idTo,
+                                 boolean overrideActive, boolean docTypeRejected) {}
+
+    /**
+     * Resolve the effective scope from configuration and the current override snapshot. Pure and
+     * static so the branch logic (override vs configured, allow-list gate, cursor handling) is unit
+     * testable without a database — the same seam pattern as {@link #runGuarded} / {@link #submitThrottled}.
+     *
+     * <p>When no override is active the lower bound is {@code max(lastProcessedId, id-from)} exactly as
+     * before. When an override is active the cursor is ignored and {@code override.idFrom} is used, so a
+     * sub-range below the advanced cursor becomes visible again; correctness is still guaranteed by the
+     * tracking-table anti-join at the call sites, not by the cursor.
+     */
+    public static EffectiveScope resolveScope(SquishProperties properties, ScopeState.Snapshot scope, long lastProcessedId) {
+        var q = properties.getQuery();
+        var pipeline = properties.getPipeline();
+
+        if (scope.active()) {
+            String docType = scope.docType();
+            if (docType == null) {
+                return new EffectiveScope(q.getMasterTableFilter(), scope.idFrom(),
+                        scope.hasUpperBound(), scope.idTo(), true, false);
+            }
+            if (q.getAllowedDocTypes() != null && q.getAllowedDocTypes().contains(docType)) {
+                // docType is a trusted allow-list entry, so interpolation here cannot inject SQL.
+                String filter = String.format("%s = '%s'", q.getDocTypeColumn(), docType);
+                return new EffectiveScope(filter, scope.idFrom(), scope.hasUpperBound(), scope.idTo(), true, false);
+            }
+            // Not on the allow-list: never interpolate it. Fall back to the configured filter.
+            return new EffectiveScope(q.getMasterTableFilter(), scope.idFrom(),
+                    scope.hasUpperBound(), scope.idTo(), true, true);
+        }
+
+        long lower = Math.max(lastProcessedId, pipeline.getIdFrom());
+        return new EffectiveScope(q.getMasterTableFilter(), lower,
+                pipeline.hasUpperBound(), pipeline.getIdTo(), false, false);
+    }
+
+    /**
      * Calculate initial database statistics for progress tracking (excluding already processed).
      */
     public void calculateInitialStats() {
-        var pipeline = properties.getPipeline();
         var q = properties.getQuery();
-        long startId = pipeline.getIdFrom();
+        // Stats reflect the backlog of the CURRENT scope. Passing id-from as the "cursor" makes the
+        // configured lower bound id-from (not the advanced runtime cursor); an active override uses
+        // its own idFrom. The anti-join still excludes anything already processed.
+        var scope = resolveScope(properties, scopeState.snapshot(), properties.getPipeline().getIdFrom());
+        long startId = scope.idFrom();
         // The anti-join matches the DETAIL row on both PK columns: a master document may own N
         // detail rows, and each of them is tracked separately. Matching on the master ID alone
         // would exclude a whole document as soon as any one of its parts had been processed.
@@ -139,13 +198,13 @@ public final class WatchdogService implements AutoCloseable {
             q.getDataColumn(),
             q.getMasterTable(),
             q.getDetailTable(), q.getIdColumn(), q.getDetailIdColumn(),
-            q.getMasterTableFilter(),
+            scope.filter(),
             q.getDataColumn(),
             q.getIdColumn(),
             q.getTrackingTable(),
             q.getDetailTable(), q.getDetailIdColumn(),
             q.getDetailTable(), q.getDetailCtrColumn()
-        ) + (pipeline.hasUpperBound() ? String.format(" AND %s <= ?", q.getIdColumn()) : "");
+        ) + (scope.hasUpperBound() ? String.format(" AND %s <= ?", q.getIdColumn()) : "");
 
         log.debug("Initial stats SQL: {}", sql);
 
@@ -153,8 +212,8 @@ public final class WatchdogService implements AutoCloseable {
              PreparedStatement ps = conn.prepareStatement(sql)) {
 
             ps.setLong(1, startId);
-            if (pipeline.hasUpperBound()) {
-                ps.setLong(2, pipeline.getIdTo());
+            if (scope.hasUpperBound()) {
+                ps.setLong(2, scope.idTo());
             }
 
             try (ResultSet rs = ps.executeQuery()) {
@@ -162,13 +221,14 @@ public final class WatchdogService implements AutoCloseable {
                     long count = rs.getLong("cnt");
                     long totalSize = rs.getLong("total_size");
                     tracker.setInitialStats(count, totalSize);
-                    log.info("Initial stats: {} records, {} MB from ID > {}",
-                            count, String.format("%.2f", totalSize / 1024.0 / 1024.0), startId);
+                    log.info("Initial stats: {} records, {} MB from ID >= {}{}",
+                            count, String.format("%.2f", totalSize / 1024.0 / 1024.0), startId,
+                            scope.overrideActive() ? " [scope override]" : "");
                 }
             }
         } catch (Exception e) {
             log.error("Failed to calculate initial stats. Filter: [{}], SQL: {}",
-                    q.getMasterTableFilter(), sql, e);
+                    scope.filter(), sql, e);
         }
     }
 
@@ -261,8 +321,25 @@ public final class WatchdogService implements AutoCloseable {
         cycleOriginalBytes.set(0);
         cycleCompressedBytes.set(0);
 
-        log.info("=== Cycle #{} started at {} (last ID: {}) ===",
-                cycle, timeStr, lastProcessedId.get());
+        // React to a runtime scope change (operator applied or cleared an override) exactly once:
+        // re-log the audit line and recompute the backlog stats so the dashboard's "candidates" total
+        // reflects what this cycle will actually scan. Cheap (a COUNT) and rare.
+        var scopeSnap = scopeState.snapshot();
+        if (scopeSnap.version() != lastScopeVersion) {
+            lastScopeVersion = scopeSnap.version();
+            if (scopeSnap.active()) {
+                log.info("Cycle #{}: scope override now in effect (idFrom={}, idTo={}, docType={}, autoRevert={}, by '{}')",
+                        cycle, scopeSnap.idFrom(), scopeSnap.hasUpperBound() ? scopeSnap.idTo() : "∞",
+                        scopeSnap.docType() != null ? scopeSnap.docType() : "<configured filter>",
+                        scopeSnap.autoRevert(), scopeSnap.appliedBy());
+            } else {
+                log.info("Cycle #{}: using the configured scope (no override)", cycle);
+            }
+            calculateInitialStats();
+        }
+
+        log.info("=== Cycle #{} started at {} (last ID: {}{}) ===",
+                cycle, timeStr, lastProcessedId.get(), scopeSnap.active() ? ", scope override" : "");
 
         int processed = processNewRecords();
         lastCycleTime = Instant.now();
@@ -278,6 +355,14 @@ public final class WatchdogService implements AutoCloseable {
             }
         } else {
             log.info("Cycle #{} completed: no new records found", cycle);
+        }
+
+        // Auto-revert ("the magic"): if the operator opted in and the override window is now drained
+        // (this cycle found nothing left in it), return to the configured scope. Only a committed
+        // tracking row removes a record from the anti-join, so processed == 0 means the window is
+        // genuinely exhausted, not merely quiet.
+        if (scopeSnap.active() && scopeSnap.autoRevert() && processed == 0) {
+            scopeState.clear("override window drained (auto-revert requested by '" + scopeSnap.appliedBy() + "')");
         }
     }
 
@@ -313,7 +398,12 @@ public final class WatchdogService implements AutoCloseable {
     private int processNewRecords() {
         var pipeline = properties.getPipeline();
         var q = properties.getQuery();
-        long startId = Math.max(lastProcessedId.get(), pipeline.getIdFrom());
+        var scope = resolveScope(properties, scopeState.snapshot(), lastProcessedId.get());
+        long startId = scope.idFrom();
+        if (scope.docTypeRejected()) {
+            log.warn("Scope override named a doc-type not in squish.query.allowed-doc-types - "
+                    + "ignoring it and using the configured filter for this cycle");
+        }
 
         // Query for new records (excluding already processed, respecting ID range).
         // Include CTR column for composite PK (OTTI_ID, OTTI_CTR); the anti-join is per detail
@@ -333,13 +423,13 @@ public final class WatchdogService implements AutoCloseable {
             q.getIdColumn(), q.getDetailCtrColumn(), q.getFilenameColumn(), q.getDataColumn(),
             q.getMasterTable(),
             q.getDetailTable(), q.getIdColumn(), q.getDetailIdColumn(),
-            q.getMasterTableFilter(),
+            scope.filter(),
             q.getDataColumn(),
             q.getIdColumn(),
             q.getTrackingTable(),
             q.getDetailTable(), q.getDetailIdColumn(),
             q.getDetailTable(), q.getDetailCtrColumn()
-        ) + (pipeline.hasUpperBound() ? String.format(" AND %s <= ?", q.getIdColumn()) : "")
+        ) + (scope.hasUpperBound() ? String.format(" AND %s <= ?", q.getIdColumn()) : "")
           + String.format(" ORDER BY %s", q.getIdColumn());
 
         int processedCount = 0;
@@ -351,8 +441,8 @@ public final class WatchdogService implements AutoCloseable {
 
             ps.setFetchSize(pipeline.getFetchSize());
             ps.setLong(1, startId);
-            if (pipeline.hasUpperBound()) {
-                ps.setLong(2, pipeline.getIdTo());
+            if (scope.hasUpperBound()) {
+                ps.setLong(2, scope.idTo());
             }
 
             try (ResultSet rs = ps.executeQuery()) {
@@ -376,8 +466,13 @@ public final class WatchdogService implements AutoCloseable {
                     futures.add(future);
                     processedCount++;
 
-                    // Update last processed ID
-                    lastProcessedId.updateAndGet(current -> Math.max(current, id));
+                    // Advance the cursor only under the CONFIGURED scope. While an override is active
+                    // the window is re-scanned each cycle (the anti-join drains it), and leaving the
+                    // cursor untouched means returning to the configured scope resumes exactly where it
+                    // was — an override never rewinds the standard progress.
+                    if (!scope.overrideActive()) {
+                        lastProcessedId.updateAndGet(current -> Math.max(current, id));
+                    }
 
                     // Throttle if configured
                     if (properties.getPipeline().getThrottleMillis() > 0) {

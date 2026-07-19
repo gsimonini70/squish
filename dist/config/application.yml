@@ -134,6 +134,13 @@ squish:
     #   "OTT_TIPO_DOC IN ('001030','001031') AND OTT_STATUS = 'A'"
     #   "OTT_TIPO_DOC = '001030' AND OTT_DATA_INS > DATE '2024-01-01'"
     master-table-filter: ${MASTER_TABLE_FILTER:OTT_TIPO_DOC = '001030'}
+    # Dashboard-driven scope override (watchdog only). An operator can narrow the watchdog's
+    # execution scope from the dashboard - id range, and optionally a document type - to advance a
+    # targeted sub-scope before switching to continuous mode. allowed-doc-types is a closed set: only
+    # these trusted values may reach the WHERE fragment, which is what keeps the feature injection-safe.
+    # Empty (default) disables the doc-type selector, leaving only the SQL-parameter-bound id range.
+    doc-type-column: ${DOC_TYPE_COLUMN:OTT_TIPO_DOC}
+    allowed-doc-types: []                                # e.g. ["001030","001031"]
 
   # ----------------------------------------
   # Pipeline Configuration

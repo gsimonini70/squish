@@ -205,6 +205,20 @@ footer code{ color:var(--muted); }
 .btn-primary{ color:#fff; background:var(--green); border-color:var(--green); }
 .btn-primary:hover{ background:var(--green); opacity:.9; }
 .btn-primary:disabled{ color:var(--faint); background:var(--sunk); border-color:var(--line); cursor:not-allowed; }
+.btn-ghost{ color:var(--sub); background:transparent; border-color:var(--line-2); }
+.btn-ghost:hover{ border-color:var(--sub); }
+.btn-ghost:disabled{ color:var(--faint); border-color:var(--line); cursor:not-allowed; }
+
+.scope-off{ color:var(--muted); font-size:13px; }
+.scope-note{ color:var(--muted); font-size:12.5px; line-height:1.55; margin:12px 0 2px; }
+.scope-grid{ display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px; margin-top:14px; }
+.scope-field{ display:flex; flex-direction:column; gap:6px; }
+.scope-field label{ font-family:var(--mono); font-size:11px; letter-spacing:.03em; text-transform:uppercase; color:var(--muted); }
+.inp{ font-family:var(--mono); font-size:13px; color:var(--ink); background:var(--sunk); border:1px solid var(--line-2); border-radius:6px; padding:9px 11px; width:100%; box-sizing:border-box; }
+.inp:focus{ outline:none; border-color:var(--green-line); }
+.inp:disabled{ color:var(--faint); cursor:not-allowed; }
+.scope-check{ display:flex; align-items:center; gap:8px; font-family:var(--mono); font-size:12.5px; color:var(--sub); margin-top:14px; cursor:pointer; }
+.scope-actions{ display:flex; gap:10px; flex-wrap:wrap; margin-top:16px; }
 
 @media (max-width:840px){
   .hero,.twoup,.three{ grid-template-columns:1fr; }

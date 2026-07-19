@@ -1,5 +1,6 @@
 package com.lucsartech.squish.pipeline;
 
+import com.lucsartech.squish.config.SquishProperties;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
@@ -329,6 +330,77 @@ class WatchdogServiceTest {
             } catch (Exception e) {
                 throw new AssertionError("submitThrottled should not have thrown", e);
             }
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Dashboard-driven scope override: the pure resolver that decides the filter / id bounds and
+    // whether the cursor is honoured. No database is involved.
+    // ---------------------------------------------------------------------------------------
+
+    @Nested
+    @DisplayName("resolveScope (execution-scope resolver)")
+    class ResolveScopeTests {
+
+        private SquishProperties props() {
+            var p = new SquishProperties();
+            p.getQuery().setMasterTableFilter("OTT_TIPO_DOC = '001030'");
+            p.getQuery().setDocTypeColumn("OTT_TIPO_DOC");
+            p.getQuery().setAllowedDocTypes(List.of("001030", "001031"));
+            p.getPipeline().setIdFrom(100);
+            return p;
+        }
+
+        private ScopeState.Snapshot override(long idFrom, long idTo, String docType) {
+            return new ScopeState.Snapshot(true, idFrom, idTo, docType, false, null, "tester", 1);
+        }
+
+        private ScopeState.Snapshot inactive() {
+            return new ScopeState.Snapshot(false, 0, 0, null, false, null, null, 0);
+        }
+
+        @Test
+        @DisplayName("no override: lower bound is max(cursor, id-from), configured filter, no override flag")
+        void configuredScopeHonoursCursor() {
+            var scope = WatchdogService.resolveScope(props(), inactive(), 500);
+            assertThat(scope.overrideActive()).isFalse();
+            assertThat(scope.filter()).isEqualTo("OTT_TIPO_DOC = '001030'");
+            assertThat(scope.idFrom()).isEqualTo(500);   // cursor is ahead of id-from(100)
+
+            var behind = WatchdogService.resolveScope(props(), inactive(), 50);
+            assertThat(behind.idFrom()).isEqualTo(100);   // id-from wins when the cursor is behind it
+        }
+
+        @Test
+        @DisplayName("override with no doc-type: ignores the cursor, keeps the configured filter")
+        void overrideIgnoresCursorKeepsFilter() {
+            var scope = WatchdogService.resolveScope(props(), override(10, 20, null), 9999);
+            assertThat(scope.overrideActive()).isTrue();
+            assertThat(scope.docTypeRejected()).isFalse();
+            assertThat(scope.idFrom()).isEqualTo(10);     // cursor (9999) deliberately ignored
+            assertThat(scope.hasUpperBound()).isTrue();
+            assertThat(scope.idTo()).isEqualTo(20);
+            assertThat(scope.filter()).isEqualTo("OTT_TIPO_DOC = '001030'");
+        }
+
+        @Test
+        @DisplayName("override with an allow-listed doc-type: builds the filter from the trusted value")
+        void overrideAllowedDocTypeBuildsFilter() {
+            var scope = WatchdogService.resolveScope(props(), override(0, 0, "001031"), 0);
+            assertThat(scope.overrideActive()).isTrue();
+            assertThat(scope.docTypeRejected()).isFalse();
+            assertThat(scope.filter()).isEqualTo("OTT_TIPO_DOC = '001031'");
+            assertThat(scope.hasUpperBound()).isFalse();
+        }
+
+        @Test
+        @DisplayName("override with a doc-type NOT on the allow-list: rejected, falls back to configured filter")
+        void overrideDisallowedDocTypeIsRejected() {
+            // A value that would be an injection attempt if it were ever interpolated.
+            var scope = WatchdogService.resolveScope(props(), override(0, 0, "x' OR '1'='1"), 0);
+            assertThat(scope.overrideActive()).isTrue();
+            assertThat(scope.docTypeRejected()).isTrue();
+            assertThat(scope.filter()).isEqualTo("OTT_TIPO_DOC = '001030'");
         }
     }
 

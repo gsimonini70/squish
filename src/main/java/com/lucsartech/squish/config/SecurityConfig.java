@@ -36,7 +36,7 @@ public class SecurityConfig {
 
     private static final String[] PUBLIC_GET = {
             "/", "/config",
-            "/api/status", "/api/health", "/api/profiles", "/api/profile", "/api/config",
+            "/api/status", "/api/health", "/api/profiles", "/api/profile", "/api/config", "/api/scope",
             "/metrics"
     };
     private static final String[] PUBLIC_STATIC = {"/css/**", "/js/**"};
@@ -70,7 +70,7 @@ public class SecurityConfig {
         http.authorizeHttpRequests(auth -> auth
                 .requestMatchers(PUBLIC_STATIC).permitAll()
                 .requestMatchers(HttpMethod.GET, PUBLIC_GET).permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/config", "/api/compress", "/api/thumbnail").authenticated()
+                .requestMatchers(HttpMethod.POST, "/api/config", "/api/scope", "/api/compress", "/api/thumbnail").authenticated()
                 .anyRequest().authenticated());
         http.httpBasic(org.springframework.security.config.Customizer.withDefaults());
 

@@ -129,6 +129,17 @@ public class SquishProperties {
         // Examples: "OTT_TIPO_DOC = '001030'" or "OTT_TIPO_DOC IN ('001030','001031') AND OTT_STATUS = 'A'"
         private String masterTableFilter = "OTT_TIPO_DOC = '001030'";
 
+        // Column used to narrow a runtime scope override by document type (dashboard-driven).
+        // Only ever combined with a value taken from allowedDocTypes below, never with free text.
+        private String docTypeColumn = "OTT_TIPO_DOC";
+
+        // Allow-list of document types an operator may pick from the dashboard when overriding the
+        // execution scope of the watchdog. This is what keeps the runtime override safe: the value
+        // that ends up interpolated into the WHERE fragment must be one of these trusted entries,
+        // so a dashboard user can never inject arbitrary SQL through the scope panel. Empty (the
+        // default) means the doc-type selector is disabled and only the id range can be overridden.
+        private List<String> allowedDocTypes = new ArrayList<>();
+
         public String getMasterTable() { return masterTable; }
         public void setMasterTable(String masterTable) { this.masterTable = masterTable; }
 
@@ -155,6 +166,12 @@ public class SquishProperties {
 
         public String getMasterTableFilter() { return masterTableFilter; }
         public void setMasterTableFilter(String masterTableFilter) { this.masterTableFilter = masterTableFilter; }
+
+        public String getDocTypeColumn() { return docTypeColumn; }
+        public void setDocTypeColumn(String docTypeColumn) { this.docTypeColumn = docTypeColumn; }
+
+        public List<String> getAllowedDocTypes() { return allowedDocTypes; }
+        public void setAllowedDocTypes(List<String> allowedDocTypes) { this.allowedDocTypes = allowedDocTypes; }
     }
 
     /**
