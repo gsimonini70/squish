@@ -105,6 +105,9 @@ class StatusApiTest {
             var json = GSON.fromJson(response.getContentAsString(), JsonObject.class);
             assertThat(json.get("status").getAsString()).isEqualTo("UP");
             assertThat(json.get("phase").getAsString()).isEqualTo("RUNNING");
+            // Build identity is exposed on the lightweight health probe too.
+            assertThat(json.get("version").getAsString()).isNotBlank();
+            assertThat(json.get("buildNumber").getAsString()).isNotBlank();
         }
 
         @Test

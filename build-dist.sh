@@ -54,9 +54,18 @@ fi
 
 DIST_NAME="squish-${VERSION}"
 
+# Build number: the git commit this bundle is built from, so several rebuilds of the same
+# <version> can be told apart. Suffixed .dirty when the tree has uncommitted (tracked) changes.
+# Passed to Maven as -Dgit.commit and filtered into build.properties (read at runtime by BuildInfo).
+GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo unknown)
+if [ "$GIT_COMMIT" != "unknown" ] && ! git diff --quiet HEAD 2>/dev/null; then
+    GIT_COMMIT="${GIT_COMMIT}.dirty"
+fi
+
 echo "========================================"
 echo "Building Squish Distribution Package"
 echo "Version: $VERSION"
+echo "Build:   $GIT_COMMIT"
 echo "========================================"
 
 # ------------------------------------------------------------------
@@ -73,10 +82,10 @@ if [ "$SKIP_TESTS" -eq 1 ]; then
     echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
     echo ""
     echo "Building JAR (tests skipped)..."
-    mvn clean package -DskipTests -B
+    mvn clean package -DskipTests -B "-Dgit.commit=${GIT_COMMIT}"
 else
     echo "Building JAR and running the test suite..."
-    if ! mvn clean verify -B; then
+    if ! mvn clean verify -B "-Dgit.commit=${GIT_COMMIT}"; then
         echo ""
         echo "========================================"
         echo "BUILD FAILED: the test suite is red (or compilation failed)."

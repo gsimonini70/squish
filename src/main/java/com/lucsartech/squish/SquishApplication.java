@@ -55,49 +55,10 @@ public class SquishApplication implements CommandLineRunner {
             ╚═══════════════════════════════════════════════════════════════╝
             """;
 
+    // Show version + build number (e.g. 3.2.0+a1b2c3d) so the banner names the exact build, not just
+    // the release. BuildInfo owns the pom.xml-single-source resolution and the "dev" fallback.
     private static final String BANNER = BANNER_TEMPLATE.formatted(
-            centerInBox("Modern PDF Compression Pipeline v" + resolveVersion()));
-
-    /**
-     * Version of the running build, so the banner can never drift from pom.xml (the single
-     * source of truth). {@code spring-boot-maven-plugin} writes {@code Implementation-Version}
-     * (= pom.xml {@code <version>}) into the jar manifest at package time.
-     *
-     * <p>Falls back to {@code "dev"} — never {@code null} — when there is no manifest, i.e.
-     * when running from an IDE or from exploded classes.
-     */
-    private static String resolveVersion() {
-        // Plain jar / exploded-with-manifest: the JVM attaches the manifest to the package.
-        // In a Spring Boot fat jar the classes live in BOOT-INF/classes and this is null,
-        // so fall through to reading the jar manifest ourselves.
-        String version = SquishApplication.class.getPackage().getImplementationVersion();
-        if (version == null || version.isBlank()) {
-            version = versionFromBootManifest();
-        }
-        return (version == null || version.isBlank()) ? "dev" : version;
-    }
-
-    /**
-     * Reads {@code Implementation-Version} from the fat jar's own manifest. Every jar on the
-     * classpath has a {@code META-INF/MANIFEST.MF}, so we identify ours by its {@code Start-Class}
-     * — an attribute only the repackaged Squish jar carries — rather than trusting iteration order.
-     */
-    private static String versionFromBootManifest() {
-        try {
-            var manifests = SquishApplication.class.getClassLoader().getResources("META-INF/MANIFEST.MF");
-            while (manifests.hasMoreElements()) {
-                try (var in = manifests.nextElement().openStream()) {
-                    var attributes = new java.util.jar.Manifest(in).getMainAttributes();
-                    if (SquishApplication.class.getName().equals(attributes.getValue("Start-Class"))) {
-                        return attributes.getValue("Implementation-Version");
-                    }
-                }
-            }
-        } catch (Exception e) {
-            // Version is cosmetic: never let banner rendering break startup.
-        }
-        return null;
-    }
+            centerInBox("Modern PDF Compression Pipeline v" + BuildInfo.fullVersion()));
 
     /** Centers {@code text} inside the fixed-width banner box, keeping the borders aligned. */
     private static String centerInBox(String text) {
@@ -137,6 +98,8 @@ public class SquishApplication implements CommandLineRunner {
     @Override
     public void run(String... args) throws Exception {
         log.info("Starting PDF Compressor Modern");
+        log.info("Build: {} (commit {}, built {})",
+                BuildInfo.fullVersion(), BuildInfo.buildNumber(), BuildInfo.buildTime());
         log.info("Mode: {} | Threads: {} | Dry-run: {} | Watch: {}",
                 properties.getMode(),
                 properties.getPipeline().getWorkerThreads(),

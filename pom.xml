@@ -27,6 +27,13 @@
         <itext.version>8.0.2</itext.version>
         <ojdbc.version>23.3.0.23.09</ojdbc.version>
         <twelvemonkeys.version>3.10.1</twelvemonkeys.version>
+
+        <!-- Build stamp (filtered into build.properties). git.commit distinguishes the several
+             builds a single <version> can ship in; build-dist.sh overrides it with the short SHA
+             (-Dgit.commit=<sha>[.dirty]). A plain `mvn package` leaves it "unknown". -->
+        <git.commit>unknown</git.commit>
+        <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
+        <build.time>${maven.build.timestamp}</build.time>
     </properties>
 
     <dependencies>
@@ -145,6 +152,25 @@
     </dependencies>
 
     <build>
+        <resources>
+            <!-- Only build.properties is filtered, so @project.version@ / @git.commit@ / @build.time@
+                 get substituted. Everything else is copied verbatim (spring-boot's parent otherwise
+                 filters only application*.yml, which would leave build.properties untouched). -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>build.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>build.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>

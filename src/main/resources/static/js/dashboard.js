@@ -124,7 +124,14 @@ async function refresh() {
         if (json.mode && String(json.mode).toUpperCase().includes('DRY')) liveText += ' · dry-run';
         liveEl.textContent = liveText;
         setText('elapsed', formatElapsed(d.elapsedSeconds));
-        if (json.version) setText('footerVersion', 'Squish ' + json.version);
+        if (json.version) {
+            // Append the build number so the footer names the exact build, not just the release.
+            let footer = 'Squish ' + json.version;
+            if (json.buildNumber && json.buildNumber !== 'unknown') footer += ' (' + json.buildNumber + ')';
+            setText('footerVersion', footer);
+            const fv = document.getElementById('footerVersion');
+            if (fv && json.buildTime && json.buildTime !== 'unknown') fv.title = 'Built ' + json.buildTime;
+        }
 
         // ---- 01 space reclaimed ----
         const currentSize = d.completed ? d.finalDbSizeBytes : d.currentDbSizeBytes;

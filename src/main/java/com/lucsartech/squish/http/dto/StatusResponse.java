@@ -15,4 +15,6 @@ public record StatusResponse(ProgressTracker.Snapshot data,
                              List<ProgressTracker.ActivityEntry> activity,
                              ActiveProfileInfo profile,
                              OnDemandInfo onDemand,
-                             String version) {}
+                             String version,
+                             String buildNumber,
+                             String buildTime) {}

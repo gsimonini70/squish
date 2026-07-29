@@ -1,5 +1,6 @@
 package com.lucsartech.squish.http;
 
+import com.lucsartech.squish.BuildInfo;
 import com.lucsartech.squish.config.SquishProperties;
 import com.lucsartech.squish.http.dto.ActiveProfileInfo;
 import com.lucsartech.squish.http.dto.HealthResponse;
@@ -45,7 +46,8 @@ public class StatusController {
         var activity = tracker.recentActivity();
         return new StatusResponse(snapshot, modeStr, properties.getMode().name(),
                 watchMode, system, activity,
-                getActiveProfileInfo(), getOnDemandInfo(), resolveVersion());
+                getActiveProfileInfo(), getOnDemandInfo(),
+                BuildInfo.version(), BuildInfo.buildNumber(), BuildInfo.buildTime());
     }
 
     private ActiveProfileInfo getActiveProfileInfo() {
@@ -83,12 +85,6 @@ public class StatusController {
                 metrics.isOnDemandLastSuccess());
     }
 
-    // Same resolution as the SquishApplication banner: null in fat-jar/IDE -> "dev".
-    private String resolveVersion() {
-        String version = getClass().getPackage().getImplementationVersion();
-        return version != null ? version : "dev";
-    }
-
     private SystemInfo getSystemInfo() {
         Runtime rt = Runtime.getRuntime();
         long maxMemory = rt.maxMemory();
@@ -112,7 +108,10 @@ public class StatusController {
 
     @GetMapping("/api/health")
     public HealthResponse health() {
-        return new HealthResponse("UP", tracker.isCompleted() ? "COMPLETED" : "RUNNING");
+        // version + buildNumber here too, so a lightweight monitoring probe can read the running
+        // build over HTTP without pulling the full status payload.
+        return new HealthResponse("UP", tracker.isCompleted() ? "COMPLETED" : "RUNNING",
+                BuildInfo.version(), BuildInfo.buildNumber());
     }
 
     @GetMapping("/api/profiles")
