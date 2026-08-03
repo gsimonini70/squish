@@ -2,9 +2,17 @@
 # ==================
 # Activate with: --spring.profiles.active=prod
 
-compressor:
+squish:
+  # PRECEDENCE: active-profile WINS over mode. 'mode' is the legacy fallback and is
+  # only applied when active-profile is unset/empty or names an unknown profile.
+  # (Note: startup logs and the dashboard still DISPLAY 'mode' - see dist/config/application.yml.)
   mode: ${COMPRESSION_MODE:AGGRESSIVE}
   dry-run: ${DRY_RUN:false}
+
+  # Named compression profile, resolved against squish.profiles in application.yml
+  # (archival | office | web | confidential | custom-example).
+  # Set ACTIVE_PROFILE to an empty value to fall back to the legacy 'mode' above.
+  active-profile: ${ACTIVE_PROFILE:office}
 
   database:
     jdbc-url: ${DB_URL:jdbc:oracle:thin:@//localhost:1521/ORCLPDB1}
@@ -38,6 +46,19 @@ compressor:
     keystore-password: ${HTTP_KEYSTORE_PASSWORD:}
     keystore-type: ${HTTP_KEYSTORE_TYPE:PKCS12}
     ssl-protocol: ${HTTP_SSL_PROTOCOL:TLSv1.3}
+    # Comma-separated origins, e.g. CORS_ALLOWED_ORIGINS=https://app.example.com,https://intranet.example.com
+    # Unset/empty -> EMPTY list -> CORS disabled entirely (never a wildcard).
+    cors-allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+
+  # Dashboard / API security - HTTP Basic on the write endpoints
+  # (POST /api/config, /api/compress, /api/thumbnail). Read endpoints stay public.
+  security:
+    enabled: ${SECURITY_ENABLED:true}
+    username: ${SECURITY_USERNAME:admin}
+    # Deliberately NO default: if SECURITY_PASSWORD is unset this binds blank and
+    # SecurityConfig generates a random password, logged once at WARN on every restart.
+    # Set SECURITY_PASSWORD in squish.env (chmod 600) for a stable credential.
+    password: ${SECURITY_PASSWORD:}
 
   watchdog:
     enabled: ${WATCHDOG_ENABLED:true}
@@ -68,4 +89,4 @@ compressor:
 logging:
   level:
     root: WARN
-    com.lucsartech.pdf: INFO
+    com.lucsartech.squish: INFO

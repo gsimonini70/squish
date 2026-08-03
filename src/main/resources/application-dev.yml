@@ -2,7 +2,7 @@
 # ===================
 # Activate with: --spring.profiles.active=dev
 
-compressor:
+squish:
   dry-run: true  # Safe mode for development
 
   pipeline:
@@ -12,4 +12,4 @@ compressor:
 
 logging:
   level:
-    com.lucsartech.pdf: DEBUG
+    com.lucsartech.squish: DEBUG

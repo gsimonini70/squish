@@ -6,11 +6,23 @@
 #   2. sudo systemctl daemon-reload
 #   3. sudo systemctl enable squish
 #   4. sudo systemctl start squish
+#
+# systemd is the SUPPORTED supervision path for Squish. The app deliberately
+# exits non-zero when it cannot continue (WatchdogService on a fatal Error such
+# as OutOfMemoryError, CompressionPipeline on a fatal stage failure) instead of
+# lingering as a zombie that answers the dashboard but processes nothing. The
+# recovery for that is Restart=on-failure below. Do not remove it.
 
 [Unit]
 Description=Squish PDF Compression Engine
 Documentation=https://github.com/gsimonini70/squish
-After=network.target oracle.service
+After=network-online.target
+Wants=network-online.target
+
+# Give up (and stay 'failed', loudly) instead of hot-looping forever if the
+# process dies immediately on every start - e.g. bad DB credentials.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -18,18 +30,21 @@ User=squish
 Group=squish
 WorkingDirectory=/opt/squish
 
-# Default values (can be overridden by squish.env)
-Environment="JAVA_HOME=/usr/lib/jvm/java-22"
-Environment="JAVA_OPTS=-Xms512m -Xmx4g -XX:+UseZGC"
-Environment="SPRING_PROFILES_ACTIVE=prod"
+# NOTE: we do NOT use EnvironmentFile= here.
+# /opt/squish/config/squish.env is a *shell* file: its lines carry `export` and
+# trailing `# comments`, neither of which systemd's EnvironmentFile= parser
+# understands (it would silently drop every variable). bin/squish-run.sh sources
+# it with a real shell and then exec()s the JVM, so the JVM inherits the config
+# through its environment - and credentials still never appear in `ps aux`.
+#
+# ExecStart must also be an absolute path: systemd does NOT expand variables in
+# the first token, so the old `ExecStart=${JAVA_HOME}/bin/java ...` never worked.
+ExecStart=/opt/squish/bin/squish-run.sh
 
-# Load environment from file (overrides defaults above)
-EnvironmentFile=-/opt/squish/config/squish.env
+KillSignal=SIGTERM
+TimeoutStopSec=90
 
-ExecStart=${JAVA_HOME}/bin/java $JAVA_OPTS -jar /opt/squish/squish.jar --spring.profiles.active=$SPRING_PROFILES_ACTIVE
-ExecStop=/bin/kill -TERM $MAINPID
-
-# Restart configuration
+# Restart configuration - see the note at the top of this file.
 Restart=on-failure
 RestartSec=10
 
@@ -37,7 +52,16 @@ RestartSec=10
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
+PrivateTmp=true
+
+# ProtectSystem=strict makes the WHOLE filesystem read-only except what is listed
+# here. The app writes in two places under WorkingDirectory:
+#   logs/     - logback (logging.file.name)
+#   reports/  - squish.report.directory, default 'reports', RELATIVE to
+#               WorkingDirectory. If you point REPORT_DIRECTORY somewhere else,
+#               that path must be added here too or every report write will fail.
 ReadWritePaths=/opt/squish/logs
+ReadWritePaths=/opt/squish/reports
 
 # Logging
 StandardOutput=journal

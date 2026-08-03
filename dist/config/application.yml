@@ -2,81 +2,227 @@
 # Squish - PDF Compression Engine
 # Configuration File
 # ============================================
-# Copy this file and customize for your environment
-# Activate with: --spring.profiles.active=<profile>
+# This file is installed to <install-dir>/config/application.yml and is read
+# automatically at startup (external config location).
+#
+# HOW THIS FILE INTERACTS WITH squish.env
+# ---------------------------------------
+# An external application.yml OUTRANKS the application-prod.yml packaged inside
+# the jar. That means a LITERAL value written here WINS over the matching
+# environment variable from squish.env.
+#
+# To keep both channels working, every setting below is written as:
+#     key: ${ENV_VAR:default}
+#   -> if ENV_VAR is exported in squish.env, that value is used
+#   -> otherwise the default after the ':' is used
+#
+# So:
+#   * Prefer squish.env for anything sensitive (DB password, dashboard password):
+#     that file is chmod 600 and its values never appear in `ps aux`.
+#   * Edit this file only to change a DEFAULT, or replace a ${...} placeholder
+#     with a literal value to PIN a setting (it will then ignore the env var).
+#
+# Activate the production profile with: --spring.profiles.active=prod
 
-compressor:
+squish:
   # ----------------------------------------
-  # Compression Mode
+  # Compression: profile (preferred) vs mode (legacy)
   # ----------------------------------------
-  # LOSSLESS - No quality loss (PDF optimization only)
-  # MEDIUM   - Balanced compression (85% scale, 80% JPEG quality)
-  # AGGRESSIVE - Maximum compression (70% scale, 60% JPEG quality)
-  mode: AGGRESSIVE
-  
+  # PRECEDENCE - read this before touching either setting:
+  #   1. active-profile WINS whenever it names a key under `profiles:` below.
+  #   2. `mode:` is the LEGACY fallback. It is applied ONLY when active-profile
+  #      is empty or names a profile that does not exist.
+  #
+  # KNOWN DISPLAY QUIRK: the startup banner, the run summary and the dashboard
+  # all show `mode:`, even when a profile is what is actually being applied.
+  # With the defaults below (mode: AGGRESSIVE + active-profile: office) the
+  # dashboard says AGGRESSIVE while PDFs are really compressed with MEDIUM
+  # (0.75 scale / 0.7 quality). Do not trust the displayed mode; trust
+  # active-profile. To make the display honest, either set active-profile to an
+  # empty value (then `mode` really is in charge) or set `mode` to the same mode
+  # as the profile you selected.
+
+  # Legacy mode - only used when active-profile is empty/unknown.
+  # Exact values from CompressionMode.java (scale factor / JPEG quality):
+  #   LOSSLESS   - 1.0  / 1.0   No quality loss, PDF structure optimization only
+  #   MEDIUM     - 0.75 / 0.7   Balanced compression, minimal quality loss
+  #   AGGRESSIVE - 0.5  / 0.3   Maximum compression, noticeable quality reduction
+  mode: ${COMPRESSION_MODE:AGGRESSIVE}
+
+  # Named profile to apply (see `profiles:` below). This is what actually runs.
+  # Leave empty (active-profile: ) to fall back to `mode` above.
+  active-profile: ${ACTIVE_PROFILE:office}
+
+  # ----------------------------------------
+  # Compression Profiles
+  # ----------------------------------------
+  # Each profile takes EITHER a `mode` OR explicit custom-scale-factor /
+  # custom-jpeg-quality (custom values win over mode inside a profile).
+  # A profile also carries the watermark and PDF/A settings.
+  profiles:
+    # Long-term storage: no quality loss, PDF/A output.
+    archival:
+      description: "Archival quality - lossless compression"
+      mode: LOSSLESS                 # 1.0 scale / 1.0 quality
+      pdfa-enabled: true
+      pdfa-conformance: PDF_A_2B     # PDF_A_1B | PDF_A_2B | PDF_A_3B
+
+    # Everyday documents: good size reduction, minimal visible loss. (Default.)
+    office:
+      description: "Office documents - balanced compression"
+      mode: MEDIUM                   # 0.75 scale / 0.7 quality
+
+    # Smallest possible files for web/email. Visible quality loss.
+    web:
+      description: "Web/email - maximum compression"
+      mode: AGGRESSIVE               # 0.5 scale / 0.3 quality
+
+    # Explicit scale/quality instead of a mode - tune these two numbers freely.
+    custom-example:
+      description: "Custom profile with explicit scale and quality"
+      custom-scale-factor: 0.7       # 0.1 - 1.0 (1.0 = original size)
+      custom-jpeg-quality: 0.65      # 0.1 - 1.0 (1.0 = best quality)
+
+    # Burns a diagonal watermark into every page. It is part of the page content,
+    # not an annotation, so it cannot be removed by a PDF viewer.
+    confidential:
+      description: "Confidential documents with watermark"
+      mode: MEDIUM
+      watermark-enabled: true
+      watermark-text: "CONFIDENTIAL"
+      # CENTER | TOP_LEFT | TOP_RIGHT | BOTTOM_LEFT | BOTTOM_RIGHT | DIAGONAL | TILED
+      watermark-position: DIAGONAL
+      watermark-opacity: 0.3         # 0.0 - 1.0
+      # watermark-font-name: Helvetica
+      # watermark-font-size: 48
+      # watermark-color: "#888888"
+
   # ----------------------------------------
   # Dry-Run Mode
   # ----------------------------------------
-  # When true, processes PDFs but doesn't write to database
-  dry-run: false
+  # true = compress and report, but never write back to the database.
+  # NOTE: the database is still contacted at startup even in dry-run.
+  dry-run: ${DRY_RUN:false}
 
   # ----------------------------------------
   # Database Configuration
   # ----------------------------------------
+  # Set DB_URL / DB_USER / DB_PASSWORD in squish.env (chmod 600) rather than
+  # hardcoding credentials here - this file is world-readable in most installs.
   database:
-    jdbc-url: jdbc:oracle:thin:@//localhost:1521/ORCLPDB1
+    jdbc-url: ${DB_URL:jdbc:oracle:thin:@//localhost:1521/ORCLPDB1}
     username: ${DB_USER:user}
-    password: ${DB_PASSWORD:password}
-    max-pool-size: 12
+    password: ${DB_PASSWORD:changeme}
+    max-pool-size: 12               # Keep >= pipeline.worker-threads
+
+  # ----------------------------------------
+  # Query Configuration - table/column names
+  # ----------------------------------------
+  # Adjust only if your schema differs from the standard OTTICA/OTTICAI layout.
+  query:
+    master-table: ${MASTER_TABLE:OTTICA}                 # Master table (PDF metadata)
+    detail-table: ${DETAIL_TABLE:OTTICAI}                # Detail table (PDF BLOBs)
+    tracking-table: ${TRACKING_TABLE:SQUISH_PROCESSED}   # Created by sql/create_tracking_table.sql
+    id-column: ${ID_COLUMN:OTT_ID}                       # Master primary key
+    filename-column: ${FILENAME_COLUMN:OTT_NOME_FILE}    # Filename column
+    detail-id-column: ${DETAIL_ID_COLUMN:OTTI_ID}        # Detail composite PK, part 1
+    detail-ctr-column: ${DETAIL_CTR_COLUMN:OTTI_CTR}     # Detail composite PK, part 2
+    data-column: ${DATA_COLUMN:OTTI_DATA}                # BLOB column with the PDF
+    # WHERE clause fragment for the master table (without the WHERE keyword).
+    # Examples:
+    #   "OTT_TIPO_DOC = '001030'"
+    #   "OTT_TIPO_DOC IN ('001030','001031') AND OTT_STATUS = 'A'"
+    #   "OTT_TIPO_DOC = '001030' AND OTT_DATA_INS > DATE '2024-01-01'"
+    master-table-filter: ${MASTER_TABLE_FILTER:OTT_TIPO_DOC = '001030'}
+    # Dashboard-driven scope override (watchdog only). An operator can narrow the watchdog's
+    # execution scope from the dashboard - id range, and optionally a document type - to advance a
+    # targeted sub-scope before switching to continuous mode. allowed-doc-types is a closed set: only
+    # these trusted values may reach the WHERE fragment, which is what keeps the feature injection-safe.
+    # Empty (default) disables the doc-type selector, leaving only the SQL-parameter-bound id range.
+    doc-type-column: ${DOC_TYPE_COLUMN:OTT_TIPO_DOC}
+    allowed-doc-types: []                                # e.g. ["001030","001031"]
 
   # ----------------------------------------
   # Pipeline Configuration
   # ----------------------------------------
   pipeline:
-    # Number of compression worker threads
-    worker-threads: 8
-    
-    # Record ID range (0 = no limit)
-    id-from: 0
-    id-to: 0
-    
-    # Database fetch/write batch sizes
-    fetch-size: 200
-    batch-size: 200
-    
-    # Internal queue capacity
-    queue-capacity: 500
-    
-    # Throttle between records (ms), 0 = no throttle
-    throttle-millis: 0
+    worker-threads: ${WORKER_THREADS:8}   # Concurrent compressions (start at CPU cores)
+    id-from: ${ID_FROM:0}                 # Process records with ID >= this (0 = from the start)
+    id-to: ${ID_TO:0}                     # Process records with ID <= this (0 = no limit)
+    fetch-size: 200                       # JDBC rows fetched per round trip
+    batch-size: 200                       # Updates per commit
+    queue-capacity: 500                   # In-memory queue depth between stages
+    throttle-millis: 0                    # Pause between records; raise to reduce DB load
 
   # ----------------------------------------
-  # HTTP Dashboard
+  # HTTP / HTTPS Dashboard
   # ----------------------------------------
   http:
-    port: 8080
+    port: ${HTTP_PORT:8080}               # Dashboard: http://<host>:8080/
+
+    # --- HTTPS (recommended if the dashboard is reachable off-host) ---
+    # Startup FAILS if ssl-enabled is true and the keystore cannot be read -
+    # it will never silently fall back to plaintext.
+    #   keytool -genkeypair -alias squish -keyalg RSA -keysize 2048 \
+    #           -storetype PKCS12 -keystore squish.p12 -validity 3650
+    ssl-enabled: ${HTTP_SSL_ENABLED:false}
+    keystore-path: ${HTTP_KEYSTORE_PATH:}         # e.g. /opt/squish/config/squish.p12
+    keystore-password: ${HTTP_KEYSTORE_PASSWORD:} # Prefer squish.env for this
+    keystore-type: ${HTTP_KEYSTORE_TYPE:PKCS12}   # PKCS12 or JKS
+    ssl-protocol: ${HTTP_SSL_PROTOCOL:TLSv1.3}    # TLSv1.2 or TLSv1.3
+
+    # Cross-origin browser clients allowed to call the API.
+    # EMPTY = CORS off (no wildcard is ever sent). Comma-separated when set, e.g.
+    #   CORS_ALLOWED_ORIGINS=https://app.example.com,https://intranet.example.com
+    cors-allowed-origins: ${CORS_ALLOWED_ORIGINS:}
+
+  # ----------------------------------------
+  # Dashboard / API Security  (HTTP Basic)
+  # ----------------------------------------
+  # Read endpoints (dashboard, /api/status, /api/health, /metrics) are public.
+  # Write endpoints (POST /api/config, /api/compress, /api/thumbnail) require login.
+  security:
+    enabled: ${SECURITY_ENABLED:true}     # false = everything public. Closed LAN only.
+    username: ${SECURITY_USERNAME:admin}
+    # PASSWORD: set SECURITY_PASSWORD in squish.env (chmod 600). If it is left
+    # unset, a RANDOM password is generated at every restart and only printed in
+    # the log as a WARN line - the write endpoints are then unusable in practice.
+    password: ${SECURITY_PASSWORD:}
 
   # ----------------------------------------
   # Watchdog Mode
   # ----------------------------------------
-  # Continuous monitoring for new records
+  # true  = stay resident and poll for new records forever.
+  # false = single batch run, then exit.
   watchdog:
-    enabled: false
-    poll-interval-seconds: 60
+    enabled: ${WATCHDOG_ENABLED:false}
+    poll-interval-seconds: ${WATCHDOG_INTERVAL:60}
+
+  # ----------------------------------------
+  # Reports
+  # ----------------------------------------
+  report:
+    enabled: ${REPORT_ENABLED:true}       # PDF summary report at the end of a run
+    directory: ${REPORT_DIRECTORY:reports}  # Relative to the install dir, or absolute
 
   # ----------------------------------------
   # Email Notifications
   # ----------------------------------------
   email:
-    enabled: false
-    smtp-host: smtp.example.com
-    smtp-port: 587
-    ssl: true
-    smtp-user: ${SMTP_USER:}
-    smtp-password: ${SMTP_PASSWORD:}
-    from: squish@company.com
+    enabled: ${EMAIL_ENABLED:false}
+    smtp-host: ${SMTP_HOST:smtp.example.com}
+    smtp-port: ${SMTP_PORT:587}           # 587 = STARTTLS, 465 = implicit SSL
+    smtp-user: ${SMTP_USER:}              # Empty = no SMTP authentication
+    smtp-password: ${SMTP_PASSWORD:}      # Prefer squish.env for this
+    ssl: ${SMTP_SSL:false}                # true for port 465
+    starttls: ${SMTP_STARTTLS:true}       # true for port 587
+    ssl-protocols: ${SMTP_SSL_PROTOCOLS:TLSv1.2,TLSv1.3}
+    trust-all-certs: false                # Leave false: true disables certificate checks
+    connection-timeout: 10000             # ms
+    read-timeout: 30000                   # ms
+    from: ${SMTP_FROM:squish@example.com}
     to:
-      - admin@company.com
+      - ${SMTP_TO:admin@example.com}      # For several recipients, list them one per line
 
 # ----------------------------------------
 # Logging Configuration
@@ -84,7 +230,7 @@ compressor:
 logging:
   level:
     root: INFO
-    com.lucsartech.pdf: INFO
+    com.lucsartech.squish: INFO           # DEBUG for troubleshooting (very verbose)
   file:
     name: logs/squish.log
   logback:

@@ -2,13 +2,20 @@
 # Squish - Docker Compose
 # ============================================
 # Usage: docker-compose up -d
+#
+# The image tag comes from SQUISH_VERSION (a .env file next to this compose file,
+# or an exported env var). It must match <version> in pom.xml, which is the single
+# source of truth; build-dist.sh writes the .env for you. Defaults to "dev".
 
 version: '3.8'
 
 services:
   squish:
-    build: .
-    image: squish:2.0
+    build:
+      context: .
+      args:
+        SQUISH_VERSION: ${SQUISH_VERSION:-dev}
+    image: squish:${SQUISH_VERSION:-dev}
     container_name: squish
     restart: unless-stopped
     ports:
@@ -19,8 +26,24 @@ services:
       - DB_URL=${DB_URL:-jdbc:oracle:thin:@//dbserver:1521/SERVICE}
       - DB_USER=${DB_USER:-user}
       - DB_PASSWORD=${DB_PASSWORD:-password}
+      # Dashboard / API security. Leave SECURITY_PASSWORD unset and the app generates
+      # a random one on every restart and logs it once at WARN -- set it explicitly.
+      - SECURITY_ENABLED=${SECURITY_ENABLED:-true}
+      - SECURITY_USERNAME=${SECURITY_USERNAME:-admin}
+      - SECURITY_PASSWORD=${SECURITY_PASSWORD:-}
+      # Comma-separated. Empty = CORS off (no wildcard).
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      # Wins over COMPRESSION_MODE. See config/application.yml.
+      - ACTIVE_PROFILE=${ACTIVE_PROFILE:-office}
     volumes:
       - ./logs:/app/logs
+      # squish.report.directory defaults to "reports", relative to WORKDIR /app.
+      # Without this mount the PDF reports die with the container.
+      - ./reports:/app/reports
+      # Spring loads /app/config/application.yml as a default location, and an external
+      # application.yml OUTRANKS the packaged application-prod.yml. Keep its values as
+      # ${ENV_VAR:default} placeholders -- a literal there silently wins over the
+      # environment block above.
       - ./config:/app/config:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/api/health"]

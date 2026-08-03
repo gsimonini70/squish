@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squish — Configuration</title>
+    <link rel="stylesheet" th:href="@{/css/squish.css}" href="/css/squish.css">
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <span class="lc">🗜️</span>
+        <div class="brandname">Squish</div>
+        <div class="h-src">Configuration</div>
+        <div class="grow"></div>
+        <nav class="h-nav">
+            <a href="/">Dashboard</a>
+            <a href="/api/config">API</a>
+            <a href="/metrics">Metrics</a>
+        </nav>
+        <button class="theme" id="themeToggle" type="button" aria-label="Switch theme">
+            <span class="ico">◐</span><span class="lbl-light">Dark</span><span class="lbl-dark">Light</span>
+        </button>
+    </header>
+
+    <div id="message" class="message"></div>
+
+    <!-- Current status -->
+    <div class="eyebrow"><span class="n">01</span> <b>Current status</b></div>
+    <div class="card">
+        <div class="status-row">
+            <span class="status-label">Active Profile</span>
+            <span id="activeProfile" class="status-value badge badge-purple">-</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">Legacy Mode</span>
+            <span id="legacyMode" class="status-value">-</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">Dry Run</span>
+            <span id="dryRun" class="status-value">-</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">Watchdog</span>
+            <span id="watchdog" class="status-value">-</span>
+        </div>
+    </div>
+
+    <!-- Profiles -->
+    <div class="eyebrow"><span class="n">02</span> <b>Compression Profiles</b></div>
+    <div class="card">
+        <div id="profilesContainer" class="loading">Loading profiles...</div>
+    </div>
+
+    <!-- Apply -->
+    <div style="text-align:center; margin-top:18px;">
+        <button id="applyBtn" class="btn btn-primary" disabled>Apply Selected Profile</button>
+    </div>
+
+    <!-- Execution scope (watchdog) -->
+    <div class="eyebrow"><span class="n">03</span> <b>Execution scope</b> · watchdog</div>
+    <div class="card">
+        <div id="scopeDisabled" class="scope-off" style="display:none">
+            This instance is not running in watchdog mode, so a scope override has no effect here.
+            Enable <code>squish.watchdog.enabled</code> to use it.
+        </div>
+        <div id="scopePanel" style="display:none">
+            <div class="status-row">
+                <span class="status-label">Current scope</span>
+                <span id="scopeStatus" class="status-value">—</span>
+            </div>
+            <div class="status-row">
+                <span class="status-label">Effective filter</span>
+                <span id="scopeFilter" class="status-value">—</span>
+            </div>
+            <p class="scope-note">
+                Narrows what the watchdog processes to a specific id range (and optionally a document
+                type). It only advances not-yet-done records — already-processed ones stay skipped, so it
+                can never redo or corrupt prior work. Applies from the next polling cycle
+                (~<span id="scopePoll">?</span>s); it is not persisted and reverts on restart.
+            </p>
+            <div class="scope-grid">
+                <div class="scope-field">
+                    <label for="scopeIdFrom">Id from</label>
+                    <input class="inp" id="scopeIdFrom" type="number" min="0" step="1" placeholder="0">
+                </div>
+                <div class="scope-field">
+                    <label for="scopeIdTo">Id to <span style="text-transform:none">(0 = no limit)</span></label>
+                    <input class="inp" id="scopeIdTo" type="number" min="0" step="1" placeholder="0">
+                </div>
+                <div class="scope-field" id="scopeDocTypeField">
+                    <label for="scopeDocType">Document type</label>
+                    <select class="inp" id="scopeDocType"></select>
+                </div>
+            </div>
+            <label class="scope-check">
+                <input id="scopeAutoRevert" type="checkbox">
+                Auto-return to the configured scope once this range is drained
+            </label>
+            <div class="scope-actions">
+                <button id="scopeApplyBtn" class="btn btn-primary" type="button">Apply scope</button>
+                <button id="scopeClearBtn" class="btn btn-ghost" type="button" disabled>Reset to standard</button>
+            </div>
+        </div>
+    </div>
+
+    <footer>
+        <div>API <code>/api/config</code> · Prometheus <code>/metrics</code></div>
+        <div>Lucsartech Srl · Squish</div>
+    </footer>
+</div>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var KEY = 'squish-theme';
+    try {
+      var saved = localStorage.getItem(KEY);
+      if (saved === 'light' || saved === 'dark') root.dataset.theme = saved;
+    } catch (e) {}
+    document.getElementById('themeToggle').addEventListener('click', function () {
+      var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var current = root.dataset.theme || (systemDark ? 'dark' : 'light');
+      var next = current === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      try { localStorage.setItem(KEY, next); } catch (e) {}
+    });
+  })();
+</script>
+<script th:src="@{/js/config.js}" src="/js/config.js"></script>
+</body>
+</html>

@@ -1,0 +1,3 @@
+# Intentionally minimal config for @WebMvcTest slices.
+# Replaces the default application.yml so its squish.* properties do not rebind
+# the programmatic SquishProperties beans defined in the HTTP slice tests.

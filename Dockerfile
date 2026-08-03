@@ -1,14 +1,20 @@
 # ============================================
 # Squish - Docker Image
 # ============================================
-# Build: docker build -t squish:2.0 .
-# Run:   docker run -p 8080:8080 -e DB_URL=... squish:2.0
+# The version is NOT hardcoded here: pom.xml <version> is the single source of truth.
+# Pass it in (build-dist.sh writes it to the dist .env; docker-compose forwards it):
+#
+# Build: docker build --build-arg SQUISH_VERSION=$(mvn -q help:evaluate -Dexpression=project.version -DforceStdout) -t squish:3.0.0 .
+# Run:   docker run -p 8080:8080 -e DB_URL=... squish:3.0.0
 
 FROM eclipse-temurin:22-jre-alpine
 
+# Defaults to "dev" when the caller does not pass a version.
+ARG SQUISH_VERSION=dev
+
 LABEL maintainer="Lucsartech Srl"
 LABEL description="Squish - PDF Compression Engine"
-LABEL version="2.0.0"
+LABEL version="${SQUISH_VERSION}"
 
 # Create app user
 RUN addgroup -S squish && adduser -S squish -G squish
@@ -16,7 +22,7 @@ RUN addgroup -S squish && adduser -S squish -G squish
 WORKDIR /app
 
 # Copy JAR
-COPY target/pdf-compressor-modern-*.jar squish.jar
+COPY target/squish-*.jar squish.jar
 
 # Create directories
 RUN mkdir -p logs config && chown -R squish:squish /app

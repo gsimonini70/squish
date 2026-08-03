@@ -2,7 +2,7 @@
 # ============
 # Activate with: --spring.profiles.active=test
 
-compressor:
+squish:
   database:
     jdbc-url: jdbc:oracle:thin:@//fraviapp024.eur.mccormick.com:1521/fds1test
     username: fidestest
@@ -13,4 +13,4 @@ compressor:
 
 logging:
   level:
-    com.lucsartech.pdf: INFO
+    com.lucsartech.squish: INFO

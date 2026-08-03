@@ -12,12 +12,12 @@
     </parent>
 
     <groupId>com.lucsartech</groupId>
-    <artifactId>pdf-compressor-modern</artifactId>
-    <version>2.0.0</version>
+    <artifactId>squish</artifactId>
+    <version>3.2.0</version>
     <packaging>jar</packaging>
 
-    <name>PDF Compressor Modern</name>
-    <description>Modern PDF compression pipeline with Spring Boot and Virtual Threads</description>
+    <name>Squish PDF Compression Engine</name>
+    <description>High-performance PDF compression pipeline with Virtual Threads and Prometheus metrics</description>
 
     <properties>
         <java.version>22</java.version>
@@ -27,6 +27,13 @@
         <itext.version>8.0.2</itext.version>
         <ojdbc.version>23.3.0.23.09</ojdbc.version>
         <twelvemonkeys.version>3.10.1</twelvemonkeys.version>
+
+        <!-- Build stamp (filtered into build.properties). git.commit distinguishes the several
+             builds a single <version> can ship in; build-dist.sh overrides it with the short SHA
+             (-Dgit.commit=<sha>[.dirty]). A plain `mvn package` leaves it "unknown". -->
+        <git.commit>unknown</git.commit>
+        <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
+        <build.time>${maven.build.timestamp}</build.time>
     </properties>
 
     <dependencies>
@@ -34,6 +41,21 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+        <!-- Spring MVC (embedded Tomcat) - replaces com.sun.net.httpserver -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <!-- Thymeleaf for server-side dashboard/config templates -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-thymeleaf</artifactId>
+        </dependency>
+        <!-- Spring Security for HTTP Basic auth on write endpoints -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -50,6 +72,17 @@
         <dependency>
             <groupId>com.itextpdf</groupId>
             <artifactId>layout</artifactId>
+            <version>${itext.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>pdfa</artifactId>
+            <version>${itext.version}</version>
+        </dependency>
+        <!-- Bouncy Castle for PDF encryption -->
+        <dependency>
+            <groupId>com.itextpdf</groupId>
+            <artifactId>bouncy-castle-adapter</artifactId>
             <version>${itext.version}</version>
         </dependency>
 
@@ -88,15 +121,62 @@
             <artifactId>jakarta.mail</artifactId>
             <version>2.0.1</version>
         </dependency>
+
+        <!-- Metrics - Micrometer with Prometheus -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- Testing -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Spring Security test support (httpBasic() request post-processor, @WithMockUser) -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
+        <resources>
+            <!-- Only build.properties is filtered, so @project.version@ / @git.commit@ / @build.time@
+                 get substituted. Everything else is copied verbatim (spring-boot's parent otherwise
+                 filters only application*.yml, which would leave build.properties untouched). -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>build.properties</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>build.properties</exclude>
+                </excludes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
                 <configuration>
-                    <mainClass>com.lucsartech.pdf.PdfCompressorApplication</mainClass>
+                    <mainClass>com.lucsartech.squish.SquishApplication</mainClass>
                 </configuration>
             </plugin>
             <plugin>

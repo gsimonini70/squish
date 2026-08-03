@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Squish — Dashboard</title>
+    <link rel="stylesheet" th:href="@{/css/squish.css}" href="/css/squish.css">
+</head>
+<body>
+<div class="wrap">
+    <header>
+        <span class="lc">🗜️</span>
+        <div class="brandname">Squish</div>
+        <div class="grow"></div>
+        <div class="live"><i></i><span id="liveStatus">Starting</span></div>
+        <div class="clock"><span id="elapsed">0:00</span><small>&nbsp;elapsed</small></div>
+        <nav class="h-nav">
+            <a href="/config">Config</a>
+        </nav>
+        <button class="theme" id="themeToggle" type="button" aria-label="Switch theme">
+            <span class="ico">◐</span><span class="lbl-light">Dark</span><span class="lbl-dark">Light</span>
+        </button>
+    </header>
+
+    <!-- 01 -->
+    <div class="eyebrow"><span class="n">01</span> <b>Space reclaimed</b></div>
+    <div class="grid hero">
+        <div class="card">
+            <div class="k">Reclaimed from database</div>
+            <div class="bignum"><span id="reclaimedNum">0</span><span class="u" id="reclaimedUnit">B</span></div>
+            <div class="heroline">database <b id="dbSmallerPct">0%</b> smaller · <b id="heroInitial">0 B</b> → <b id="heroCurrent">0 B</b></div>
+        </div>
+        <div class="card squeeze">
+            <div class="sqrow"><div class="sqlab">original</div><div class="track"><div class="fill orig" style="width:100%"></div></div><div class="sqval" id="origBytes">0 B</div></div>
+            <div class="sqrow"><div class="sqlab">compressed</div><div class="track"><div class="fill comp" id="compFill" style="width:0%"></div></div><div class="sqval" id="compBytes">0 B</div></div>
+            <div class="sqfoot"><span>across <b id="compDocCount" style="color:var(--ink)">0</b>&nbsp;compressed documents</span><span><b id="avgPerFile">0%</b>&nbsp;average per file</span></div>
+        </div>
+    </div>
+
+    <!-- 02 -->
+    <div class="eyebrow"><span class="n">02</span> <b>Run progress</b></div>
+    <div class="card">
+        <div class="phead">
+            <div class="lead"><b id="readCount">0</b> of <span id="totalCount">0</span> candidates read</div>
+            <div class="badge" id="runBadge">running</div>
+        </div>
+        <div class="seg">
+            <span class="s-comp" id="segComp" style="width:0%"></span>
+            <span class="s-skip" id="segSkip" style="width:0%"></span>
+            <span class="s-fail" id="segFail" style="width:0%"></span>
+        </div>
+        <div class="legend">
+            <span><i style="background:var(--green)"></i>Compressed <b id="legendComp">0</b></span>
+            <span><i style="background:var(--slate-fill);opacity:.4"></i>Skipped <b id="legendSkip">0</b></span>
+            <span><i style="background:var(--red)"></i>Failed <b id="legendFail">0</b></span>
+        </div>
+        <div class="note">Skipped documents were already optimal or not PDFs — nothing left to gain. This bar shows outcomes, not remaining work.</div>
+    </div>
+
+    <!-- 03 -->
+    <div class="eyebrow"><span class="n">03</span> <b>Active profile &amp; on-demand API</b></div>
+    <div class="grid twoup">
+        <div class="card">
+            <div class="k" id="profileName" style="margin-bottom:6px">Profile</div>
+            <div class="rowline"><span class="lab">Compression</span><span class="val" id="profileCompression">—</span></div>
+            <div class="rowline"><span class="lab">Watermark</span><span class="val" id="profileWatermark">—</span></div>
+            <div class="rowline"><span class="lab">PDF/A</span><span class="val" id="profilePdfa">—</span></div>
+        </div>
+        <div class="card">
+            <div class="k" style="margin-bottom:9px">On-demand REST · authenticated</div>
+            <div class="endpoint"><span class="verb">POST</span>/api/compress<span class="lock">🔒 basic auth</span></div>
+            <div class="endpoint"><span class="verb">POST</span>/api/thumbnail<span class="lock">🔒 basic auth</span></div>
+            <div class="rowline" style="margin-top:6px"><span class="lab">Calls since start</span><span class="val" id="onDemandCalls">0</span></div>
+            <div class="rowline"><span class="lab">Last</span><span class="val" id="onDemandLast">—</span></div>
+        </div>
+    </div>
+
+    <!-- 04 -->
+    <div class="eyebrow"><span class="n">04</span> <b>Throughput &amp; health</b></div>
+    <div class="grid three">
+        <div class="card">
+            <div class="k">Throughput</div>
+            <div class="v green"><span id="recordsPerSec">0</span><small> rec/s</small></div>
+            <div class="sub"><span id="mbPerSec">0</span> MB/s · <span id="avgTime">0</span> ms avg/PDF</div>
+        </div>
+        <div class="card">
+            <div class="k">Resources</div>
+            <div class="gaugewrap">
+                <div class="g">
+                    <div class="sub" style="margin-top:0">CPU · <span id="cpuCores">0</span> cores</div>
+                    <div class="gauge"><i id="cpuBar" style="width:0%;background:var(--green)"></i></div>
+                    <div class="sub"><span id="cpuPercent">0</span>%</div>
+                </div>
+                <div class="g">
+                    <div class="sub" style="margin-top:0">Heap · <span id="memoryMax">0 B</span></div>
+                    <div class="gauge"><i id="memoryBar" style="width:0%;background:var(--slate-fill)"></i></div>
+                    <div class="sub"><span id="memoryUsed">0 B</span> · <span id="activeThreads">0</span> vthreads</div>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="k">Health</div>
+            <div class="v red"><span id="errors">0</span><small> errors</small></div>
+            <div class="sub">dead-letter queue · <span id="dlq">0</span></div>
+        </div>
+    </div>
+
+    <!-- 05 -->
+    <div class="eyebrow"><span class="n">05</span> <b>Live activity</b></div>
+    <div class="card log">
+        <div id="activityLog"></div>
+    </div>
+
+    <footer>
+        <div>API <code>/api/status</code> · Prometheus <code>/metrics</code> · refresh 2s · virtual threads</div>
+        <div>Lucsartech Srl · <span id="footerVersion">Squish</span></div>
+    </footer>
+</div>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    var KEY = 'squish-theme';
+    try {
+      var saved = localStorage.getItem(KEY);
+      if (saved === 'light' || saved === 'dark') root.dataset.theme = saved;
+    } catch (e) {}
+    document.getElementById('themeToggle').addEventListener('click', function () {
+      var systemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      var current = root.dataset.theme || (systemDark ? 'dark' : 'light');
+      var next = current === 'dark' ? 'light' : 'dark';
+      root.dataset.theme = next;
+      try { localStorage.setItem(KEY, next); } catch (e) {}
+    });
+  })();
+</script>
+<script th:src="@{/js/dashboard.js}" src="/js/dashboard.js"></script>
+</body>
+</html>
